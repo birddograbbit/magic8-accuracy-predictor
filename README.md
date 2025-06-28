@@ -1,134 +1,206 @@
 # Magic8 Accuracy Predictor
 
 ## Project Overview
-This project aims to predict the accuracy (win or loss) of Magic8's trading predictions using a hybrid Decision Tree + Transformer architecture. The system analyzes historical trading data to identify patterns based on time of day, day of month, symbol, VIX levels, and stock price levels.
+This project aims to predict the accuracy (win or loss) of Magic8's trading predictions using a hybrid Transformer + XGBoost + Decision Tree ensemble architecture. The system analyzes historical trading data to identify patterns based on time of day, day of month, symbol, VIX levels, and stock price levels.
 
-## Data Structure
-
-### Data Sources
-The project analyzes trading data from 2022-2025, with the following file types:
-- **prediction**: Stock price predictions (UTC timezone)
-- **trades**: Executed trades and their outcomes (UTC timezone)
-- **delta**: Option delta values (EST timezone)
-- **profit**: Profit/loss summaries (EST timezone)
-
-### Key Findings from Data Analysis
-
-#### File Type Distribution
-- 13 total CSV files across 5 date folders
-- File types: delta (5), prediction (1), profit (4), trades (3)
-
-#### Symbols Traded
-- SPX, SPY, XSP (S&P 500 variants)
-- NDX, QQQ (Nasdaq variants)
-- RUT (Russell 2000)
-
-#### Trading Strategies Found
-- Butterfly
-- Broken Butterfly
-- Iron Condor
-- Vertical
-- Sonar
-- Sniper
-- JOIF
-
-### Data Normalization
-
-The data normalization process handles:
-1. **Timezone Conversion**: UTC to EST conversion for trades/predictions
-2. **Timestamp Formats**: 
-   - Single column format: "12-05-2022 14:35:01"
-   - Separate columns: Date "09-18-2024" + Time "13:35"
-   - Day/Hour columns: Day "01-23-2023" + Hour "09:35"
-3. **5-minute Interval Alignment**: All trades normalized to 5-minute intervals from 9:35 AM to 4:00 PM EST
-
-### Output Files
-
-#### 1. normalized_raw.csv
-- 10,640 individual records
-- All trades with normalized timestamps
-- Original field values preserved
-
-#### 2. normalized_aggregated.csv
-- 384 unique 5-minute intervals
-- Data from all file types merged by interval
-- Fields prefixed by type: pred_, trad_, delt_, prof_
-
-#### 3. normalization_stats.json
-- Summary statistics
-- Date range: 2022-12-05 to 2025-05-15
-- Record counts by type and year
-
-## Scripts
-
-### 1. analyze_data_stdlib.py
-Analyzes all CSV files to understand structure, columns, and timestamp formats.
-
-```bash
-python3 analyze_data_stdlib.py
-```
-
-### 2. normalize_data.py
-Normalizes all data into consolidated CSV files aligned to 5-minute intervals.
-
-```bash
-python3 normalize_data.py
-```
-
-## Next Steps
-
-1. **Feature Engineering**
-   - Extract VIX data for each trading day
-   - Calculate technical indicators
-   - Create time-based features (hour of day, day of week, etc.)
-
-2. **Model Development**
-   - Implement Decision Tree for market regime classification
-   - Build Transformer model for pattern recognition
-   - Create ensemble integration layer
-
-3. **Backtesting Framework**
-   - Validate predictions against historical data
-   - Calculate performance metrics
-   - Optimize model parameters
-
-## Installation
+## 🚀 Quick Start
 
 ```bash
 # Clone the repository
 git clone https://github.com/birddograbbit/magic8-accuracy-predictor.git
+cd magic8-accuracy-predictor
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run data analysis
-python3 analyze_data_stdlib.py
+# Run quick start script
+python quick_start.py
 
-# Normalize data
-python3 normalize_data.py
+# This will:
+# 1. Test data loading
+# 2. Install dependencies (optional)
+# 3. Run data preparation pipeline (optional)
 ```
 
-## Project Structure
+## 📋 Implementation Status
 
+### Phase 1: Data Preparation ✅ Complete
+- [x] Data normalization (already done)
+- [x] Feature engineering script created
+- [x] VIX data integration
+- [x] Technical indicators
+- [x] Temporal features
+- [x] Market regime classification
+
+### Phase 2: Model Development 🚧 In Progress
+- [ ] Fork and adapt QuantStock framework
+- [ ] Binary classification transformer
+- [ ] XGBoost classifier
+- [ ] Decision tree for market regime
+- [ ] Ensemble predictor
+
+### Phase 3: Production Deployment 📅 Planned
+- [ ] FastAPI service
+- [ ] Docker containerization
+- [ ] Real-time prediction endpoint
+- [ ] Performance monitoring
+
+## 🏗️ Architecture
+
+### Data Pipeline
+```
+Raw CSV Files → Normalization → Feature Engineering → Train/Val/Test Split
+                                        ↓
+                                   VIX Data (yfinance)
+                                   Technical Indicators (ta)
+                                   Temporal Features
+```
+
+### Model Architecture
+```
+Input Features → [Transformer] → Probability
+              → [XGBoost]     → Probability  → [Ensemble] → Final Prediction
+              → [Decision Tree] → Market Regime
+```
+
+### Key Components
+
+1. **Data Preparation** (`src/data_preparation.py`)
+   - Loads normalized trading data
+   - Fetches VIX data from Yahoo Finance
+   - Adds temporal and technical features
+   - Creates train/validation/test splits
+
+2. **Model Configurations** (`configs/model_config.yaml`)
+   - Transformer: 3-layer encoder for sequence patterns
+   - XGBoost: For feature interactions
+   - Decision Tree: Market regime classification
+   - Ensemble: Weighted voting mechanism
+
+3. **Implementation Plan** (`IMPLEMENTATION_PLAN.md`)
+   - Detailed architecture design
+   - Timeline and milestones
+   - Success criteria
+
+## 📊 Data Structure
+
+### Input Features
+- **Temporal**: hour_sin/cos, day_of_week, day_of_month, is_market_open
+- **Market Data**: VIX levels, price levels, technical indicators (RSI, MA, volatility)
+- **Trading Data**: symbol, strategy_name, predicted prices, premiums
+- **Regime**: Low/Medium/High volatility classification
+
+### Output
+- Binary classification: 1 (profitable trade) or 0 (loss)
+
+## 🛠️ Development
+
+### Setup Development Environment
+```bash
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dev dependencies
+pip install -r requirements.txt
+
+# Run tests
+pytest tests/
+```
+
+### Project Structure
 ```
 magic8-accuracy-predictor/
+├── src/
+│   ├── data/
+│   │   └── data_preparation.py
+│   ├── models/
+│   │   ├── BinaryTransformer.py (TODO)
+│   │   └── XGBoostClassifier.py (TODO)
+│   └── ensemble/
+│       └── EnsemblePredictor.py (TODO)
+├── configs/
+│   └── model_config.yaml
 ├── data/
-│   ├── source/          # Original CSV files by date
-│   └── normalized/      # Processed data files
-├── analyze_data_stdlib.py
-├── normalize_data.py
+│   ├── source/          # Original CSV files
+│   ├── normalized/      # Processed data files
+│   └── processed/       # Feature-engineered data
+├── notebooks/
+│   └── Transformer_Trading.ipynb  # Reference implementation
+├── IMPLEMENTATION_PLAN.md
 ├── requirements.txt
-├── README.md
-└── data_analysis_report.md
+└── quick_start.py
 ```
 
-## Key Insights
+## 📈 Performance Metrics
 
-1. **Trading Schedule**: All trades occur between 9:35 AM and 4:00 PM EST
-2. **Multiple Strategies**: Each 5-minute interval may have multiple strategy types
-3. **Symbol Coverage**: Focus on major indices (SPX, NDX, RUT) and their ETFs
-4. **Data Quality**: Some profit files contain summary rows that need filtering
+### Classification Metrics
+- Accuracy, Precision, Recall, F1-score
+- AUC-ROC curve
+- Confusion matrix
 
-## Contact
+### Trading Metrics
+- Win rate
+- Profit factor
+- Average win/loss ratio
+- Maximum drawdown
+
+## 🔧 Configuration
+
+See `configs/model_config.yaml` for detailed model and training configurations.
+
+Key parameters:
+- Sequence length: 60 (5 hours of 5-minute data)
+- Transformer layers: 3
+- XGBoost trees: 1000
+- Ensemble weights: Optimized on validation set
+
+## 🚦 Next Steps
+
+1. **Clone QuantStock Framework**
+   ```bash
+   git clone https://github.com/MXGao-A/QuantStock.git
+   # Adapt for binary classification
+   ```
+
+2. **Implement Models**
+   - Modify transformer for binary output
+   - Add custom loss functions
+   - Implement ensemble voting
+
+3. **Training Pipeline**
+   - Cross-validation
+   - Hyperparameter tuning
+   - Model selection
+
+4. **Production Deployment**
+   - API service
+   - Docker container
+   - Monitoring dashboard
+
+## 📚 References
+
+- **QuantStock**: Production-ready framework for stock prediction
+  - https://github.com/MXGao-A/QuantStock
+- **Original Transformer Code**: See `notebooks/Transformer_Trading.ipynb`
+- **yfinance**: For VIX data - https://github.com/ranaroussi/yfinance
+- **ta**: Technical indicators - https://github.com/bukosabino/ta
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## 📝 License
+
+This project is licensed under the MIT License.
+
+## 📧 Contact
 
 For questions or contributions, please open an issue on GitHub.
+
+---
+
+**Note**: This is an active development project. The implementation is following a ship-fast, iterate approach with a focus on getting a working prototype quickly.

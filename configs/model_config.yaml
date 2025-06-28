@@ -1,0 +1,167 @@
+# Model Configuration for Magic8 Accuracy Predictor
+
+# Transformer Configuration
+transformer:
+  model_name: "BinaryTransformer"
+  seq_len: 60  # 5 hours of 5-minute intervals
+  prediction_len: 1  # Predict next interval
+  
+  # Model architecture
+  enc_in: 50  # Number of input features (will be determined after feature engineering)
+  dec_in: 50
+  c_out: 1  # Binary output
+  d_model: 128
+  n_heads: 8
+  e_layers: 3
+  d_layers: 1
+  d_ff: 512
+  dropout: 0.3
+  activation: "gelu"
+  
+  # Training parameters
+  batch_size: 64
+  learning_rate: 1e-4
+  train_epochs: 100
+  early_stopping_patience: 10
+  weight_decay: 1e-5
+  
+  # Loss and optimization
+  loss_function: "BCEWithLogitsLoss"
+  class_weights: "balanced"  # Handle imbalanced classes
+  optimizer: "AdamW"
+  scheduler: "CosineAnnealingLR"
+
+# XGBoost Configuration
+xgboost:
+  model_name: "XGBoostBinary"
+  
+  # Model parameters
+  n_estimators: 1000
+  max_depth: 6
+  learning_rate: 0.01
+  subsample: 0.8
+  colsample_bytree: 0.8
+  gamma: 0.1
+  reg_alpha: 0.1
+  reg_lambda: 1.0
+  
+  # Training parameters
+  early_stopping_rounds: 50
+  eval_metric: "auc"
+  scale_pos_weight: "auto"  # Handle class imbalance
+  
+# Decision Tree for Market Regime
+decision_tree:
+  model_name: "MarketRegimeClassifier"
+  
+  # Model parameters
+  max_depth: 5
+  min_samples_split: 100
+  min_samples_leaf: 50
+  max_features: "sqrt"
+  
+  # Features to use
+  features:
+    - "vix_close"
+    - "vix_ma5"
+    - "vix_change"
+    - "SPX_volatility"
+    - "is_market_open"
+
+# Ensemble Configuration
+ensemble:
+  model_name: "EnsemblePredictor"
+  
+  # Model weights (will be optimized based on validation performance)
+  weights:
+    transformer: 0.4
+    xgboost: 0.4
+    decision_tree: 0.2
+  
+  # Voting method
+  voting: "soft"  # Use probability-based voting
+  
+  # Confidence threshold
+  confidence_threshold: 0.6  # Only make predictions above this confidence
+
+# Data Configuration
+data:
+  # Paths
+  train_path: "data/processed/train_data.csv"
+  val_path: "data/processed/val_data.csv"
+  test_path: "data/processed/test_data.csv"
+  
+  # Preprocessing
+  scale_features: true
+  handle_missing: "forward_fill"
+  
+  # Sequence parameters
+  sequence_length: 60
+  stride: 1
+  
+  # Feature selection
+  drop_features:
+    - "interval_datetime"
+    - "date"
+    - "time_est"
+    - "file_types"
+    - "record_count"
+
+# Training Configuration
+training:
+  # Device
+  device: "cuda"  # or "cpu"
+  use_multi_gpu: false
+  
+  # Experiment tracking
+  experiment_name: "magic8_accuracy_v1"
+  tracking_uri: "mlflow"
+  
+  # Checkpointing
+  save_best_only: true
+  checkpoint_dir: "checkpoints/"
+  
+  # Logging
+  log_interval: 10
+  tensorboard: true
+
+# Evaluation Configuration
+evaluation:
+  # Metrics to track
+  metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1_score"
+    - "auc_roc"
+    - "confusion_matrix"
+  
+  # Trading metrics
+  trading_metrics:
+    - "win_rate"
+    - "profit_factor"
+    - "sharpe_ratio"
+  
+  # Visualization
+  plot_predictions: true
+  plot_feature_importance: true
+
+# Production Configuration
+production:
+  # API settings
+  api_host: "0.0.0.0"
+  api_port: 8000
+  
+  # Model serving
+  model_path: "models/best_ensemble.pkl"
+  preprocessing_path: "models/preprocessor.pkl"
+  
+  # Caching
+  use_redis: true
+  redis_host: "localhost"
+  redis_port: 6379
+  cache_ttl: 300  # 5 minutes
+  
+  # Monitoring
+  log_predictions: true
+  alert_threshold: 0.55  # Alert if accuracy drops below this
