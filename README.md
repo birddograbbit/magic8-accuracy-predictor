@@ -1,86 +1,134 @@
 # Magic8 Accuracy Predictor
 
-A Transformer-based binary classification system to predict the accuracy (win/loss) of Magic8 trading system predictions.
+## Project Overview
+This project aims to predict the accuracy (win or loss) of Magic8's trading predictions using a hybrid Decision Tree + Transformer architecture. The system analyzes historical trading data to identify patterns based on time of day, day of month, symbol, VIX levels, and stock price levels.
 
-## Overview
+## Data Structure
 
-This project adapts a time-series Transformer architecture to predict whether Magic8's next option combo order will be profitable or not, based on:
-- Historical Magic8 performance patterns
-- Temporal features (time of day, day of month)
-- Market conditions (VIX, stock price levels)
-- Symbol-specific patterns
+### Data Sources
+The project analyzes trading data from 2022-2025, with the following file types:
+- **prediction**: Stock price predictions (UTC timezone)
+- **trades**: Executed trades and their outcomes (UTC timezone)
+- **delta**: Option delta values (EST timezone)
+- **profit**: Profit/loss summaries (EST timezone)
 
-## Architecture
+### Key Findings from Data Analysis
 
-### Hybrid Approach
-Based on research showing 15-35% performance improvement, we implement a hybrid architecture:
-- **Transformer (70%)**: Captures temporal patterns in Magic8's historical performance
-- **Decision Trees (30%)**: Handles market regime detection and rule-based features
+#### File Type Distribution
+- 13 total CSV files across 5 date folders
+- File types: delta (5), prediction (1), profit (4), trades (3)
 
-### Key Features
-- Binary classification (win/loss prediction)
-- Symbol embeddings for multi-asset support
-- Cyclical temporal encoding
-- Real-time inference (<50ms)
-- Class imbalance handling
+#### Symbols Traded
+- SPX, SPY, XSP (S&P 500 variants)
+- NDX, QQQ (Nasdaq variants)
+- RUT (Russell 2000)
+
+#### Trading Strategies Found
+- Butterfly
+- Broken Butterfly
+- Iron Condor
+- Vertical
+- Sonar
+- Sniper
+- JOIF
+
+### Data Normalization
+
+The data normalization process handles:
+1. **Timezone Conversion**: UTC to EST conversion for trades/predictions
+2. **Timestamp Formats**: 
+   - Single column format: "12-05-2022 14:35:01"
+   - Separate columns: Date "09-18-2024" + Time "13:35"
+   - Day/Hour columns: Day "01-23-2023" + Hour "09:35"
+3. **5-minute Interval Alignment**: All trades normalized to 5-minute intervals from 9:35 AM to 4:00 PM EST
+
+### Output Files
+
+#### 1. normalized_raw.csv
+- 10,640 individual records
+- All trades with normalized timestamps
+- Original field values preserved
+
+#### 2. normalized_aggregated.csv
+- 384 unique 5-minute intervals
+- Data from all file types merged by interval
+- Fields prefixed by type: pred_, trad_, delt_, prof_
+
+#### 3. normalization_stats.json
+- Summary statistics
+- Date range: 2022-12-05 to 2025-05-15
+- Record counts by type and year
+
+## Scripts
+
+### 1. analyze_data_stdlib.py
+Analyzes all CSV files to understand structure, columns, and timestamp formats.
+
+```bash
+python3 analyze_data_stdlib.py
+```
+
+### 2. normalize_data.py
+Normalizes all data into consolidated CSV files aligned to 5-minute intervals.
+
+```bash
+python3 normalize_data.py
+```
+
+## Next Steps
+
+1. **Feature Engineering**
+   - Extract VIX data for each trading day
+   - Calculate technical indicators
+   - Create time-based features (hour of day, day of week, etc.)
+
+2. **Model Development**
+   - Implement Decision Tree for market regime classification
+   - Build Transformer model for pattern recognition
+   - Create ensemble integration layer
+
+3. **Backtesting Framework**
+   - Validate predictions against historical data
+   - Calculate performance metrics
+   - Optimize model parameters
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/birddograbbit/magic8-accuracy-predictor.git
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run data analysis
+python3 analyze_data_stdlib.py
+
+# Normalize data
+python3 normalize_data.py
+```
 
 ## Project Structure
 
 ```
 magic8-accuracy-predictor/
-├── src/
-│   ├── data/              # Data loading and preprocessing
-│   ├── models/            # Transformer and hybrid models
-│   ├── training/          # Training and optimization
-│   └── inference/         # Real-time prediction
-├── notebooks/             # Exploratory analysis
-├── config/                # Configuration files
-└── tests/                 # Unit tests
+├── data/
+│   ├── source/          # Original CSV files by date
+│   └── normalized/      # Processed data files
+├── analyze_data_stdlib.py
+├── normalize_data.py
+├── requirements.txt
+├── README.md
+└── data_analysis_report.md
 ```
 
-## Quick Start
+## Key Insights
 
-### Installation
-```bash
-git clone https://github.com/birddograbbit/magic8-accuracy-predictor.git
-cd magic8-accuracy-predictor
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
+1. **Trading Schedule**: All trades occur between 9:35 AM and 4:00 PM EST
+2. **Multiple Strategies**: Each 5-minute interval may have multiple strategy types
+3. **Symbol Coverage**: Focus on major indices (SPX, NDX, RUT) and their ETFs
+4. **Data Quality**: Some profit files contain summary rows that need filtering
 
-### Data Preparation
-1. Place Magic8 historical data in `data/raw/magic8_trades.csv`
-2. Ensure market data (VIX, stock prices) is available
+## Contact
 
-### Training
-```bash
-python src/training/train.py --config config/default.yaml
-```
-
-### Inference
-```bash
-python src/inference/predict.py --symbol SPY --model checkpoints/best_model.pth
-```
-
-## Implementation Timeline
-
-- **Week 1**: Data pipeline and feature engineering
-- **Week 2**: Model architecture adaptation
-- **Week 3**: Training and optimization
-- **Week 4**: Integration and deployment
-
-## Performance Targets
-
-- Accuracy > 65%
-- False Negative Rate < 30%
-- Inference time < 50ms
-- Consistent performance across market regimes
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
-
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
+For questions or contributions, please open an issue on GitHub.
