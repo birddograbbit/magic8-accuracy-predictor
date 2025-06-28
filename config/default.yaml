@@ -1,0 +1,43 @@
+# Model configuration
+model:
+  num_symbols: 100
+  symbol_embed_dim: 32
+  temporal_features: 8
+  market_features: 5
+  magic8_features: 10
+  seq_length: 30
+  d_model: 128
+  nhead: 8
+  num_layers: 3
+  dim_feedforward: 512
+  dropout: 0.1
+
+# Training configuration
+training:
+  batch_size: 64
+  learning_rate: 0.0001
+  weight_decay: 0.00001
+  num_epochs: 100
+  early_stopping_patience: 15
+  gradient_clip: 1.0
+
+# Data configuration
+data:
+  train_split: 0.7
+  val_split: 0.15
+  test_split: 0.15
+  lookback_window: 30
+  prediction_horizon: 1
+
+# Feature engineering
+features:
+  lookback_periods: [10, 20, 50]
+  use_technical_indicators: true
+  normalize_features: true
+
+# Paths
+paths:
+  raw_data: "data/raw/magic8_trades.csv"
+  processed_data: "data/processed/"
+  checkpoints: "checkpoints/"
+  logs: "logs/"
