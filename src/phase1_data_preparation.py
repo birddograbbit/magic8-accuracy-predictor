@@ -7,6 +7,9 @@ This script focuses on readily available data:
 - VIX data (from IBKR or Yahoo Finance)
 - Basic technical indicators calculated from price data
 - Simple time-based features
+
+Note: IBKR data is in UTC, while trading data is likely in US Eastern Time.
+This script handles the timezone conversion appropriately.
 """
 
 import pandas as pd
@@ -21,10 +24,12 @@ import logging
 import pytz
 
 class Phase1DataPreparation:
-    def __init__(self, data_path='data/normalized/normalized_aggregated.csv'):
+    def __init__(self, data_path='data/normalized/normalized_aggregated.csv', 
+                 trading_timezone='US/Eastern'):
         self.data_path = data_path
         self.df = None
         self.logger = self._setup_logger()
+        self.trading_timezone = trading_timezone  # Timezone for trading data
         
         # Phase 1: Focus on symbols we can easily get data for
         self.symbols = ['SPX', 'SPY', 'XSP', 'NDX', 'QQQ', 'RUT', 'AAPL', 'TSLA']
@@ -43,9 +48,14 @@ class Phase1DataPreparation:
         self.df = pd.read_csv(self.data_path)
         self.df['interval_datetime'] = pd.to_datetime(self.df['interval_datetime'])
         
-        # Convert to timezone-naive if it has timezone info
+        # Check if timezone-aware
         if self.df['interval_datetime'].dt.tz is not None:
+            self.logger.info(f"Trade data has timezone: {self.df['interval_datetime'].dt.tz}")
+            # Convert to timezone-naive for consistency
             self.df['interval_datetime'] = self.df['interval_datetime'].dt.tz_localize(None)
+        else:
+            # Assume the data is in Eastern Time if no timezone info
+            self.logger.info(f"Trade data assumed to be in {self.trading_timezone}")
             
         self.df = self.df.sort_values('interval_datetime')
         self.logger.info(f"Loaded {len(self.df)} records")
@@ -55,6 +65,8 @@ class Phase1DataPreparation:
         """
         Load historical price data downloaded from IBKR.
         Assumes files are named like: historical_data_INDEX_SPX_5_mins.csv
+        
+        IBKR data is in UTC, so we need to convert it to match the trading data timezone.
         """
         self.logger.info("Loading IBKR historical data...")
         self.price_data = {}
@@ -78,10 +90,16 @@ class Phase1DataPreparation:
                 df = pd.read_csv(filename)
                 df['date'] = pd.to_datetime(df['date'])
                 
-                # Remove timezone info to make timestamps timezone-naive
-                # This converts from UTC to timezone-naive, maintaining the same time values
+                # IBKR data is in UTC - convert to Eastern Time for US markets
                 if df['date'].dt.tz is not None:
+                    # Data has timezone (UTC), convert to Eastern
+                    df['date'] = df['date'].dt.tz_convert(pytz.timezone(self.trading_timezone))
+                    # Then remove timezone info to match normalized data
                     df['date'] = df['date'].dt.tz_localize(None)
+                    self.logger.info(f"Converted {symbol} from UTC to {self.trading_timezone}")
+                else:
+                    # If no timezone, assume it's already in the correct timezone
+                    self.logger.warning(f"{symbol} data has no timezone info, assuming {self.trading_timezone}")
                 
                 df = df.set_index('date')
                 self.price_data[symbol] = df
@@ -95,9 +113,11 @@ class Phase1DataPreparation:
             self.vix_data = pd.read_csv(vix_file)
             self.vix_data['date'] = pd.to_datetime(self.vix_data['date'])
             
-            # Remove timezone info
+            # Convert VIX data from UTC to Eastern
             if self.vix_data['date'].dt.tz is not None:
+                self.vix_data['date'] = self.vix_data['date'].dt.tz_convert(pytz.timezone(self.trading_timezone))
                 self.vix_data['date'] = self.vix_data['date'].dt.tz_localize(None)
+                self.logger.info(f"Converted VIX from UTC to {self.trading_timezone}")
                 
             self.vix_data = self.vix_data.set_index('date')
             self.logger.info(f"Loaded {len(self.vix_data)} VIX records")
