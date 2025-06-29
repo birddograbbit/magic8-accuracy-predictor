@@ -1,214 +1,197 @@
 # Magic8 Accuracy Predictor
 
 ## Project Overview
-This project predicts the accuracy (win/loss) of Magic8's 0DTE options trading system using an advanced Transformer-based ensemble architecture. The system trades **SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, and TSLA** using three strategies: **Butterfly (debit), Iron Condor (credit), and Vertical Spreads (credit)**.
+This project predicts the accuracy (win/loss) of Magic8's 0DTE options trading system. We use a phased approach, starting with a simple MVP using readily available data and gradually adding complexity.
 
-## 🚀 Quick Start
+**Trading Symbols**: SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA  
+**Strategies**: Butterfly (debit), Iron Condor (credit), Vertical Spreads (credit)
 
+## 🚀 Phase 1 Quick Start (MVP - Ship Fast!)
+
+### Step 1: Clone and Setup
 ```bash
-# Clone the repository
 git clone https://github.com/birddograbbit/magic8-accuracy-predictor.git
 cd magic8-accuracy-predictor
 
 # Install dependencies
 pip install -r requirements.txt
-
-# Run enhanced data preparation
-python src/data_preparation.py
-
-# Or use quick start script
-python quick_start.py
 ```
 
-## 📋 Implementation Status
+### Step 2: Download IBKR Data
+First, ensure your IBKR TWS/Gateway is running, then:
 
-### Phase 1: Data Preparation ✅ ENHANCED & COMPLETE
-- [x] Data normalization 
-- [x] Comprehensive feature engineering (100+ features)
-- [x] VIX and VVIX integration
-- [x] Cross-asset correlations (DXY, Treasuries, Sectors)
-- [x] 0DTE-specific temporal features
-- [x] All 8 symbols with technical indicators
-- [x] Strategy encoding for 3 trading strategies
-- [x] Market regime classification (5 levels)
+```bash
+# Copy your IBKR download script to this directory
+cp /path/to/your/ibkr_downloader.py .
 
-### Phase 2: Model Development 🚧 Next Phase
-- [ ] Fork and adapt QuantStock framework
-- [ ] Strategy-specific transformers
-- [ ] Time-aware attention mechanism
-- [ ] XGBoost with feature interactions
-- [ ] Adaptive ensemble predictor
+# Make the download script executable
+chmod +x download_phase1_data.sh
 
-### Phase 3: Production Deployment 📅 Planned
-- [ ] FastAPI service (<50ms latency)
-- [ ] Real-time feature calculation
-- [ ] Docker containerization
-- [ ] Performance monitoring dashboard
+# Download all required symbols (uses port 7497 by default)
+./download_phase1_data.sh
 
-## 🏗️ Architecture
-
-### Enhanced Data Pipeline
-```
-Raw CSV Files → Normalization → Enhanced Feature Engineering → Train/Val/Test Split
-                                            ↓
-                                    Market Data Integration
-                                    ├── VIX & VVIX (vol of vol)
-                                    ├── Cross-Assets (DXY, Bonds, Sectors)
-                                    ├── Technical Indicators (All Symbols)
-                                    ├── Microstructure Features
-                                    ├── Option-Specific Features
-                                    └── Event Indicators
+# Or specify a different port
+./download_phase1_data.sh 7496
 ```
 
-### Model Architecture
+### Step 3: Run Phase 1 Pipeline
+```bash
+# Process data and create features
+python src/phase1_data_preparation.py
+
+# Train XGBoost baseline model
+python src/models/xgboost_baseline.py
 ```
-Input Features → [Strategy-Specific Models] → Probabilities
-              → [Time-Aware Transformer]   → Patterns      → [Adaptive Ensemble] → Final Prediction
-              → [XGBoost Classifier]       → Interactions
-              → [Market Regime Classifier] → Regime Context
-```
 
-## 📊 Comprehensive Feature Set
+## 📊 Phase 1 Features (MVP)
 
-### 1. Temporal Features (0DTE Optimized)
-- **Time Decay**: Minutes to expiry with exponential decay factor
-- **Intraday Patterns**: Market open, lunch hour, power hour
-- **Cyclical Encoding**: Hour/minute sin/cos transformations
-- **Event Indicators**: Fed days, economic releases, OPEX
+Using only readily available data:
 
-### 2. Market Structure (100+ indicators)
-- **Volatility**: VIX, VVIX, IV rank/percentile
-- **Cross-Asset**: DXY, Treasury yields (10Y, 2Y), Sector ETFs (XLF, XLK)
-- **Futures Spreads**: ES/SPX, NQ/NDX for lead/lag signals
-- **Market Regimes**: 5-level classification based on VIX
+### From Your Trade Data
+- Trade outcomes (profit/loss)
+- Strategy types
+- Premium, risk, reward values
+- Trade probabilities
 
-### 3. Technical Indicators (Per Symbol)
-- **Momentum**: RSI, Rate of Change (5, 10 periods)
-- **Trend**: Multiple MAs (5, 10, 20, 50)
-- **Volatility**: ATR, Bollinger Bands, Rolling Std
-- **Price Action**: Pivot points, Support/Resistance distances
+### From IBKR Historical Data
+- 5-minute price bars for all symbols
+- VIX levels
+- Calculated technical indicators:
+  - RSI, Moving Averages
+  - Price momentum
+  - Volatility measures
 
-### 4. Option-Specific Features
-- **Greeks**: Delta, Delta² (gamma proxy)
-- **Moneyness**: Raw and log-transformed
-- **Strategy Encoding**: One-hot for Butterfly, Iron Condor, Vertical
-- **Risk Metrics**: Premium/price ratio, risk-reward ratios
+### Engineered Features
+- Time-based features (hour, minute, time to close)
+- Market regime (based on VIX levels)
+- Strategy encoding
+- Price position indicators
 
-### 5. Microstructure Features
-- **Price Dynamics**: Acceleration (2nd derivative)
-- **Range Analysis**: Daily position, normalized ranges
-- **Distance Metrics**: From key levels (pivots, MAs)
+**Total: ~60-70 features**
 
-## 🛠️ Development
+## 🎯 Phase 1 Goals
 
-### Project Structure
+- **Accuracy**: > 60% (baseline is 50%)
+- **Timeline**: 2 weeks to working model
+- **Complexity**: Simple XGBoost + feature engineering
+- **Focus**: Get a working system quickly, iterate from there
+
+## 📁 Project Structure
+
 ```
 magic8-accuracy-predictor/
-├── src/
-│   ├── data/
-│   │   └── data_preparation.py (ENHANCED ✓)
-│   ├── models/
-│   │   ├── BinaryTransformer.py
-│   │   ├── StrategySpecificModels.py
-│   │   └── MarketRegimeClassifier.py
-│   └── ensemble/
-│       └── AdaptiveEnsemble.py
-├── configs/
-│   ├── model_config.yaml
-│   └── feature_config.yaml (NEW ✓)
 ├── data/
-│   ├── source/          # 3 years of trading data
-│   ├── normalized/      # Processed data
-│   └── processed/       # Feature-engineered data
-├── notebooks/
-│   └── Transformer_Trading.ipynb
-├── IMPLEMENTATION_PLAN.md (UPDATED ✓)
-├── IMPLEMENTATION_SUMMARY.md (UPDATED ✓)
+│   ├── normalized/           # Your existing trade data
+│   ├── ibkr/                # Downloaded IBKR price data
+│   └── phase1_processed/    # Processed features
+├── src/
+│   ├── phase1_data_preparation.py  # Simple data pipeline
+│   ├── data_preparation.py         # (Future: comprehensive features)
+│   └── models/
+│       └── xgboost_baseline.py     # Phase 1 model
+├── download_phase1_data.sh   # IBKR data download helper
+├── PHASE1_PLAN.md           # Detailed Phase 1 plan
 └── requirements.txt
 ```
 
-## 📈 Performance Targets
+## 📈 Implementation Phases
 
-### Classification Metrics
-- Overall accuracy > 68%
-- Per-strategy accuracy > 65%
-- Consistent across 5 volatility regimes
+### ✅ Phase 1: MVP (Current)
+- Use existing trade data + IBKR price data
+- Simple features (price, time, VIX)
+- XGBoost baseline model
+- 2-week implementation
 
-### Trading Metrics
-- Sharpe ratio > 2.0
-- Win rate > 55%
-- Profit factor > 1.5
-- Max drawdown < 10%
+### 📅 Phase 2: Enhanced Features
+- Add cross-asset correlations
+- Market microstructure features
+- Advanced technical indicators
+- Transformer models
 
-### System Performance
-- Prediction latency < 50ms
-- Feature calculation < 20ms
-- 99.9% uptime
+### 📅 Phase 3: Production System
+- Real-time predictions
+- API deployment
+- Performance monitoring
+- Strategy-specific models
 
-## 🔧 Configuration
+## 🔧 Data Requirements
 
-See `configs/feature_config.yaml` for comprehensive feature settings:
-- All 8 trading symbols
-- 3 option strategies
-- 5 volatility regimes
-- 100+ calculated features
-- Risk management parameters
+### What You Need
+1. Your normalized trade data (already have)
+2. IBKR account with market data subscription
+3. Python 3.8+
 
-## 🚦 Next Steps
+### What We Use (Phase 1)
+- Historical price data from IBKR
+- VIX data (INDEX:VIX)
+- No exotic data sources
+- No historical options data needed
 
-1. **Test Enhanced Pipeline**
-   ```bash
-   python src/data_preparation.py
-   # Verify all features are calculated correctly
-   ```
+## 📊 Expected Results
 
-2. **Implement Strategy-Specific Models**
-   - Separate models for each strategy
-   - Time-aware transformers
-   - Asymmetric loss functions
+### Phase 1 Targets
+- Overall accuracy: > 60%
+- Per-strategy accuracy: > 58%
+- Feature calculation: < 1 second
+- Model training: < 5 minutes
 
-3. **Comprehensive Backtesting**
-   - Walk-forward optimization
-   - Transaction cost modeling
-   - Slippage estimation
+### Key Metrics
+- Accuracy, Precision, Recall
+- F1 Score, AUC-ROC
+- Performance by strategy
+- Performance by market regime
 
-4. **Production System**
-   - Real-time data feeds
-   - Sub-second predictions
-   - Performance monitoring
+## 🚦 Next Steps After Phase 1
 
-## 📊 Key Innovations
+1. **Analyze Results**
+   - Which features are most important?
+   - Which strategies are easiest to predict?
+   - When does the model fail?
 
-1. **0DTE-Specific Features**: Time decay modeling, theta considerations
-2. **Strategy Awareness**: Separate handling for different option strategies
-3. **Cross-Asset Context**: Incorporating market-wide signals
-4. **Adaptive Ensemble**: Dynamic weighting based on market regime
-5. **Comprehensive Coverage**: All major indices and key stocks
+2. **Iterate Quickly**
+   - Add features that show promise
+   - Remove features that don't help
+   - Try different model architectures
 
-## 🚀 What's New
+3. **Plan Phase 2**
+   - Based on Phase 1 learnings
+   - Add complexity only where it helps
+   - Keep focus on practical improvements
 
-- **Enhanced Data Preparation**: 100+ features specifically for 0DTE options
-- **All Symbols Included**: SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA
-- **Strategy Encoding**: Butterfly, Iron Condor, Vertical Spreads
-- **Market Context**: VIX, VVIX, DXY, Treasuries, Sectors
-- **Production Ready**: Scalable feature pipeline with <20ms calculation time
+## 💡 Key Principles
+
+1. **Start Simple**: Phase 1 uses only readily available data
+2. **Ship Fast**: Get a working model in 2 weeks
+3. **Iterate**: Learn what works before adding complexity
+4. **Be Practical**: Use data you can actually get
+5. **Measure Everything**: Track what improves predictions
+
+## 🐛 Troubleshooting
+
+### IBKR Data Download Issues
+- Ensure TWS/Gateway is running
+- Check your market data subscriptions
+- Try reducing the duration (e.g., "1 Y" instead of "3 Y")
+- Check logs in `logs/` directory
+
+### Feature Calculation Issues
+- Check for missing IBKR data files
+- Ensure all symbols have been downloaded
+- Look for NaN values in processed data
 
 ## 📚 References
 
-- **QuantStock**: Production framework - https://github.com/MXGao-A/QuantStock
-- **yfinance**: Market data - https://github.com/ranaroussi/yfinance
-- **ta**: Technical analysis - https://github.com/bukosabino/ta
+- **Your IBKR Script**: For downloading historical data
+- **XGBoost**: Fast and effective for tabular data
+- **yfinance**: Backup for VIX data if needed
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Test thoroughly with 0DTE data
-4. Submit a pull request
-
-## 📝 License
-
-This project is licensed under the MIT License.
+Focus on Phase 1 improvements:
+1. Better feature engineering
+2. Model hyperparameter tuning
+3. Error analysis and debugging
+4. Documentation improvements
 
 ## 📧 Contact
 
@@ -216,4 +199,4 @@ For questions or contributions, please open an issue on GitHub.
 
 ---
 
-**Note**: This system is specifically designed for 0DTE options trading with comprehensive features for short-term prediction accuracy. The enhanced feature set provides deep market context for improved predictions.
+**Remember**: The goal of Phase 1 is to get a working system quickly with available data. We'll add complexity in future phases only where it demonstrably improves predictions.
