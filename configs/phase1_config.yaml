@@ -1,0 +1,70 @@
+# Phase 1 Configuration - Simple MVP Settings
+
+# Data paths
+data:
+  normalized_path: "data/normalized/normalized_aggregated.csv"
+  ibkr_path: "data/ibkr"
+  output_path: "data/phase1_processed"
+
+# Symbols to process (must match IBKR download)
+symbols:
+  - SPX
+  - SPY
+  - XSP
+  - NDX
+  - QQQ
+  - RUT
+  - AAPL
+  - TSLA
+
+# Trading strategies
+strategies:
+  - Butterfly
+  - Iron Condor
+  - Vertical Spread
+
+# Feature settings
+features:
+  # Technical indicators
+  technical:
+    rsi_period: 14
+    ma_periods: [20]  # Just 20-period SMA for Phase 1
+    momentum_periods: [5]
+    volatility_period: 20
+  
+  # VIX settings
+  vix:
+    use_yahoo_fallback: true
+    regime_thresholds: [15, 20, 25]  # Creates 4 regimes
+
+# Model settings
+model:
+  # XGBoost parameters
+  xgboost:
+    n_estimators: 1000
+    max_depth: 6
+    learning_rate: 0.01
+    subsample: 0.8
+    colsample_bytree: 0.8
+    early_stopping_rounds: 50
+    eval_metric: "auc"
+  
+  # Training settings
+  training:
+    test_size: 0.2
+    validation_size: 0.2
+    random_state: 42
+    use_class_weights: true
+
+# Performance thresholds
+targets:
+  min_accuracy: 0.60
+  min_auc: 0.65
+  max_training_time_minutes: 5
+
+# Output settings
+output:
+  save_predictions: true
+  save_feature_importance: true
+  plot_results: true
+  verbose: true
