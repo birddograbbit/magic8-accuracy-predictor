@@ -276,6 +276,10 @@ class Phase1DataPreparation:
             # One-hot encode VIX regime
             regime_dummies = pd.get_dummies(self.df['vix_regime'], prefix='vix_regime')
             self.df = pd.concat([self.df, regime_dummies], axis=1)
+            
+            # Drop the original categorical column
+            self.df = self.df.drop('vix_regime', axis=1)
+            self.logger.info("Dropped original 'vix_regime' categorical column")
         
         return self
         
@@ -294,6 +298,10 @@ class Phase1DataPreparation:
             # One-hot encode
             strategy_dummies = pd.get_dummies(self.df['strategy_type'], prefix='strategy')
             self.df = pd.concat([self.df, strategy_dummies], axis=1)
+            
+            # Drop the original categorical column
+            self.df = self.df.drop('strategy_type', axis=1)
+            self.logger.info("Dropped original 'strategy_type' categorical column")
         
         # Premium normalized by underlying price (if we have it)
         if 'prof_premium' in self.df.columns:
@@ -346,8 +354,8 @@ class Phase1DataPreparation:
                 if feature in self.df.columns:
                     price_features.append(feature)
         
-        # VIX features
-        vix_features = [col for col in self.df.columns if col.startswith('vix')]
+        # VIX features (excluding the original vix_regime which was dropped)
+        vix_features = [col for col in self.df.columns if col.startswith('vix') and col != 'vix_regime']
         
         # Strategy features
         strategy_features = [col for col in self.df.columns if col.startswith('strategy_')]
