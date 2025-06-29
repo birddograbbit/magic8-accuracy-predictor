@@ -75,10 +75,31 @@ class XGBoostBaseline:
         
         self.feature_names = self.feature_info['feature_names']
         
-        # Remove 'vix_regime' if it exists (the original categorical column)
-        if 'vix_regime' in self.feature_names:
-            self.logger.warning("Removing 'vix_regime' categorical column from features")
-            self.feature_names.remove('vix_regime')
+        # Automatically detect and remove ALL object/string columns
+        # Check dtypes of features in the training data
+        object_columns = []
+        for feature in self.feature_names:
+            if feature in self.train_df.columns:
+                if self.train_df[feature].dtype == 'object':
+                    object_columns.append(feature)
+        
+        if object_columns:
+            self.logger.warning(f"Removing {len(object_columns)} object/string columns: {object_columns}")
+            self.feature_names = [f for f in self.feature_names if f not in object_columns]
+        
+        # Also check for any columns that might cause issues (additional safety check)
+        numeric_feature_names = []
+        for feature in self.feature_names:
+            if feature in self.train_df.columns:
+                # Try to verify the column is numeric
+                try:
+                    # Check if we can convert to numeric without errors
+                    pd.to_numeric(self.train_df[feature], errors='raise')
+                    numeric_feature_names.append(feature)
+                except:
+                    self.logger.warning(f"Removing non-numeric feature: {feature}")
+        
+        self.feature_names = numeric_feature_names
         
         # Prepare features and targets
         self.X_train = self.train_df[self.feature_names]
@@ -104,20 +125,17 @@ class XGBoostBaseline:
         self.X_val = self.X_val.fillna(0)
         self.X_test = self.X_test.fillna(0)
         
-        # Scale numerical features (skip one-hot encoded features and categorical features)
+        # Convert DataFrames to float to avoid dtype warnings
+        self.X_train = self.X_train.astype(float)
+        self.X_val = self.X_val.astype(float)
+        self.X_test = self.X_test.astype(float)
+        
+        # Scale numerical features (skip one-hot encoded features)
         non_binary_features = []
         for feature in self.feature_names:
-            # Skip binary/categorical features
+            # Skip binary/one-hot encoded features
             if not any(feature.startswith(prefix) for prefix in ['strategy_', 'vix_regime_', 'is_']):
-                # Also skip the original vix_regime column if it somehow still exists
-                if feature != 'vix_regime':
-                    # Check if the column contains numeric data
-                    try:
-                        # Try to convert a sample to float to verify it's numeric
-                        pd.to_numeric(self.X_train[feature], errors='coerce')
-                        non_binary_features.append(feature)
-                    except:
-                        self.logger.warning(f"Skipping non-numeric feature: {feature}")
+                non_binary_features.append(feature)
         
         self.logger.info(f"Scaling {len(non_binary_features)} numeric features")
         
@@ -126,9 +144,9 @@ class XGBoostBaseline:
             self.scaler.fit(self.X_train[non_binary_features])
             
             # Transform all sets
-            self.X_train.loc[:, non_binary_features] = self.scaler.transform(self.X_train[non_binary_features])
-            self.X_val.loc[:, non_binary_features] = self.scaler.transform(self.X_val[non_binary_features])
-            self.X_test.loc[:, non_binary_features] = self.scaler.transform(self.X_test[non_binary_features])
+            self.X_train[non_binary_features] = self.scaler.transform(self.X_train[non_binary_features])
+            self.X_val[non_binary_features] = self.scaler.transform(self.X_val[non_binary_features])
+            self.X_test[non_binary_features] = self.scaler.transform(self.X_test[non_binary_features])
         
         return self
     
