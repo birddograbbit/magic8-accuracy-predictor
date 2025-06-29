@@ -1,12 +1,19 @@
-# Magic8 Accuracy Predictor - Implementation Plan
+# Magic8 Accuracy Predictor - Implementation Plan (Updated)
 
 ## Executive Summary
-This document outlines the implementation plan for building a Transformer-based system to predict the accuracy (win/loss) of Magic8's trading predictions. The system will use historical trading data combined with market indicators to provide binary classification predictions.
+This document outlines the implementation plan for building a Transformer-based system to predict the accuracy (win/loss) of Magic8's 0DTE options trading predictions. The system trades SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, and TSLA using three strategies: Butterfly (debit), Iron Condor (credit), and Vertical Spreads (credit).
 
 ## Architecture Overview
 
 ### 1. Data Pipeline
-- **Input Features**: Time features, Symbol, VIX, Stock price levels, Technical indicators
+- **Input Features**: 
+  - Temporal: Time features with 0DTE-specific indicators (time to expiry, theta decay)
+  - Market Structure: VIX, VVIX, Put-Call ratio, GEX, term structure
+  - Technical: Price data, RSI, MA, ATR, Bollinger Bands, momentum
+  - Microstructure: Bid-ask spreads, volume profile, order flow
+  - Cross-asset: DXY, Treasury yields, sector ETFs, futures spreads
+  - Option-specific: Moneyness, delta, premium ratios, strategy encoding
+  - Price Action: Pivot points, acceleration, distance from key levels
 - **Output**: Binary classification (1=profit, 0=loss)
 - **Data Source**: 3 years of normalized trading data (2022-2025)
 
@@ -18,112 +25,141 @@ We will adapt the **QuantStock** framework (https://github.com/MXGao-A/QuantStoc
 - Modular design for easy customization
 
 ### 3. Ensemble Approach
-- **Decision Tree**: Market regime classification based on VIX levels
-- **Transformer**: Sequential pattern recognition
+- **Strategy-Specific Models**: Separate models for Butterfly, Iron Condor, and Vertical Spreads
+- **Transformer**: Sequential pattern recognition with attention mechanism
 - **XGBoost**: Feature importance and non-linear relationships
-- **Voting Mechanism**: Weighted ensemble based on validation performance
+- **Market Regime Classifier**: Adapt predictions based on volatility regime
+- **Meta-Learner**: Weighted ensemble based on recent performance
 
 ## Implementation Phases
 
-### Phase 1: Data Enhancement (3-4 days)
+### Phase 1: Data Enhancement (COMPLETED ✓)
 
 #### 1.1 Feature Engineering
 ```python
-# New features to add:
-- VIX data (fetch from yfinance)
-- Temporal features:
-  - hour_sin = sin(2π * hour/24)
-  - hour_cos = cos(2π * hour/24)
-  - day_of_week (one-hot encoded)
-  - day_of_month
-  - is_market_open_hour
-- Technical indicators:
-  - RSI (14-period)
-  - Moving averages (5, 20 periods)
-  - Volatility (rolling std)
-  - Price momentum
-- Market regime:
-  - VIX < 15: Low volatility
-  - VIX 15-25: Medium volatility
-  - VIX > 25: High volatility
+# Implemented features:
+- Market Data:
+  - VIX and VVIX (volatility of volatility)
+  - Cross-asset correlations (DXY, Treasuries, Sector ETFs)
+  - Futures vs cash spreads
+  
+- Temporal Features (0DTE specific):
+  - Minutes to expiry with exponential decay
+  - Intraday seasonality (power hour, lunch lull)
+  - Options expiration effects
+  - Economic event indicators
+  
+- Technical Indicators (All symbols including AAPL, TSLA):
+  - RSI, Multiple MAs (5, 10, 20, 50)
+  - ATR, Bollinger Bands
+  - Price acceleration (2nd derivative)
+  - Pivot points and distances
+  
+- Option-Specific:
+  - Strategy encoding (one-hot)
+  - Moneyness and log-moneyness
+  - Premium normalized by price
+  - Risk-reward ratios
+  - Delta features (gamma proxy)
+  
+- Market Regimes:
+  - 5-level VIX classification
+  - IV rank and percentile
+  - Term structure indicators
 ```
 
-#### 1.2 Data Preparation Script
-Create `src/data_preparation.py`:
-- Load normalized_aggregated.csv
-- Fetch and merge VIX data
-- Calculate technical indicators
-- Create sliding windows for sequences
-- Handle class imbalance
-- Split data temporally (60/20/20)
+#### 1.2 Data Preparation Script (ENHANCED ✓)
+Created enhanced `src/data_preparation.py`:
+- Loads normalized_aggregated.csv
+- Fetches VIX, VVIX, and cross-asset data
+- Calculates 100+ features across categories
+- Handles all 8 symbols and 3 strategies
+- Creates sequences optimized for 0DTE
+- Temporal train/val/test split
 
-### Phase 2: Model Development (1 week)
+### Phase 2: Model Development (Next Phase)
 
 #### 2.1 Fork and Adapt QuantStock
 1. Fork repository to `magic8-accuracy-predictor`
 2. Create custom modules:
    - `src/models/BinaryTransformer.py`
+   - `src/models/StrategySpecificModels.py`
    - `src/data/Magic8DataLoader.py`
-   - `src/ensemble/EnsemblePredictor.py`
+   - `src/ensemble/AdaptiveEnsemble.py`
 
-#### 2.2 Model Modifications
+#### 2.2 Model Modifications for 0DTE
 ```python
-# Key changes for binary classification:
-1. Output layer: nn.Linear(hidden_dim, 1) + nn.Sigmoid()
-2. Loss function: nn.BCEWithLogitsLoss()
-3. Metrics: Accuracy, Precision, Recall, F1, AUC-ROC
-4. Class weighting for imbalanced data
+# Key enhancements for 0DTE options:
+1. Time-aware attention mechanism
+2. Strategy-specific embeddings
+3. Volatility regime conditioning
+4. Multi-task learning (win/loss + profit magnitude)
+5. Asymmetric loss function (penalize false positives more)
 ```
 
 #### 2.3 Training Pipeline
-- Implement k-fold cross-validation
-- Early stopping based on validation loss
-- Learning rate scheduling
-- Hyperparameter tuning with Optuna
+- Strategy-stratified k-fold cross-validation
+- Time-decay weighted loss function
+- Adaptive learning rate based on market regime
+- Feature importance analysis per strategy
+- Walk-forward optimization
 
-### Phase 3: Production Deployment (3-4 days)
+### Phase 3: Production Deployment
 
-#### 3.1 API Service
+#### 3.1 Real-time API Service
 ```python
-# FastAPI structure:
-/predict - Real-time prediction endpoint
-/batch_predict - Batch predictions
-/model/reload - Reload model weights
-/health - Health check
+# FastAPI endpoints:
+/predict - Real-time prediction with <50ms latency
+/predict/strategy/{strategy_type} - Strategy-specific predictions
+/market/regime - Current market regime classification
+/features/importance - Real-time feature importance
+/backtest - Historical performance analysis
 ```
 
-#### 3.2 Infrastructure
-- Docker containerization
-- Redis for caching
-- PostgreSQL for storing predictions
-- MLflow for experiment tracking
+#### 3.2 Production Features
+- Sub-second data ingestion pipeline
+- Real-time feature calculation
+- Model versioning with A/B testing
+- Performance monitoring dashboard
+- Risk limits and circuit breakers
 
-## File Structure
+## Enhanced File Structure
 ```
 magic8-accuracy-predictor/
 ├── src/
 │   ├── data/
-│   │   ├── data_preparation.py
+│   │   ├── data_preparation.py (ENHANCED ✓)
 │   │   ├── feature_engineering.py
+│   │   ├── market_data_fetcher.py
 │   │   └── Magic8DataLoader.py
 │   ├── models/
 │   │   ├── BinaryTransformer.py
-│   │   ├── DecisionTreeRegime.py
+│   │   ├── StrategySpecificModels.py
+│   │   ├── MarketRegimeClassifier.py
 │   │   └── XGBoostClassifier.py
 │   ├── ensemble/
-│   │   └── EnsemblePredictor.py
+│   │   ├── AdaptiveEnsemble.py
+│   │   └── PerformanceTracker.py
+│   ├── features/
+│   │   ├── option_features.py
+│   │   ├── microstructure_features.py
+│   │   └── cross_asset_features.py
 │   ├── api/
 │   │   ├── main.py
-│   │   └── predictor_service.py
+│   │   ├── predictor_service.py
+│   │   └── feature_service.py
 │   └── utils/
 │       ├── metrics.py
+│       ├── backtesting.py
 │       └── visualization.py
 ├── configs/
 │   ├── model_config.yaml
-│   └── training_config.yaml
+│   ├── feature_config.yaml
+│   └── strategy_config.yaml
 ├── notebooks/
 │   ├── data_exploration.ipynb
-│   └── model_evaluation.ipynb
+│   ├── feature_analysis.ipynb
+│   └── strategy_comparison.ipynb
 ├── tests/
 ├── docker/
 │   └── Dockerfile
@@ -131,55 +167,72 @@ magic8-accuracy-predictor/
 ```
 
 ## Key Metrics to Track
-1. **Classification Metrics**:
-   - Accuracy, Precision, Recall, F1-score
-   - AUC-ROC curve
-   - Confusion matrix
 
-2. **Trading Metrics**:
-   - Profit factor (gross profit / gross loss)
-   - Win rate
-   - Average win/loss ratio
-   - Maximum drawdown
+### 1. Strategy-Specific Metrics
+- Win rate by strategy (Butterfly, Iron Condor, Vertical)
+- Average profit/loss by time of day
+- Performance by market regime
+- Slippage and transaction costs
 
-3. **Model Performance**:
-   - Training/validation loss curves
-   - Feature importance
-   - Prediction confidence distribution
+### 2. Model Performance
+- Feature importance rankings
+- Prediction confidence vs actual accuracy
+- False positive/negative analysis
+- Regime transition handling
 
-## Risk Management
-1. **Overfitting Prevention**:
-   - Dropout layers
-   - L2 regularization
-   - Data augmentation
-   - Cross-validation
+### 3. Risk Metrics
+- Maximum consecutive losses
+- Tail risk (95th percentile losses)
+- Correlation with market moves
+- Strategy concentration risk
 
-2. **Production Safeguards**:
-   - Confidence threshold for predictions
-   - Fallback to ensemble average
-   - Real-time performance monitoring
-   - A/B testing for model updates
+## 0DTE-Specific Considerations
 
-## Timeline
-- **Week 1**: Data preparation and feature engineering
-- **Week 2**: Model development and training
-- **Week 3**: Production deployment and testing
-- **Week 4**: Performance monitoring and optimization
+### 1. Time Decay Management
+- Exponential weighting of features as expiry approaches
+- Separate models for different time buckets
+- Dynamic confidence thresholds
 
-## Success Criteria
-1. Model accuracy > 65% on test set
-2. Consistent performance across different market regimes
-3. Real-time prediction latency < 100ms
-4. System uptime > 99.9%
+### 2. Volatility Smile Modeling
+- Strike-specific adjustments
+- Skew indicators
+- Wing risk management
+
+### 3. Execution Challenges
+- Wider bid-ask spreads near expiry
+- Rapid delta changes
+- Pin risk near strikes
+
+## Updated Timeline
+- **Week 1**: ✓ Enhanced data preparation with comprehensive features
+- **Week 2**: Model development with strategy-specific adaptations
+- **Week 3**: Backtesting and performance optimization
+- **Week 4**: Production deployment with real-time capabilities
+
+## Success Criteria (Updated)
+1. Model accuracy > 68% overall, > 65% per strategy
+2. Consistent performance across all 5 volatility regimes
+3. Real-time prediction latency < 50ms
+4. Profitable backtest across different market conditions
+5. Feature importance stability over time
 
 ## Next Steps
-1. Set up development environment
-2. Install QuantStock framework
-3. Create feature engineering pipeline
-4. Begin model development
+1. Test enhanced data preparation pipeline
+2. Implement strategy-specific model architectures
+3. Create comprehensive backtesting framework
+4. Develop real-time feature calculation engine
+
+## Key Improvements Made
+1. **Comprehensive Feature Set**: Added 100+ features specifically designed for 0DTE options
+2. **All Symbols Included**: Now covers all 8 symbols including AAPL and TSLA
+3. **Strategy Encoding**: Proper handling of 3 distinct trading strategies
+4. **Cross-Asset Signals**: Incorporated DXY, bonds, sectors for better market context
+5. **Microstructure Features**: Added features critical for short-term option trading
+6. **Time Decay Modeling**: Specific features for theta decay in 0DTE options
+7. **Market Regime Awareness**: 5-level volatility classification with regime-specific features
 
 ## References
 - QuantStock: https://github.com/MXGao-A/QuantStock
-- Original Transformer Trading Code: Provided in attached notebook
-- yfinance: For VIX data fetching
+- Original Transformer Trading Code: notebooks/Transformer_Trading.ipynb
+- yfinance: For market data fetching
 - ta library: For technical indicators
