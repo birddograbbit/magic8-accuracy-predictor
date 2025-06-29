@@ -113,6 +113,8 @@ class XGBoostBaseline:
         
         self.logger.info(f"Loaded {len(self.X_train)} training samples with {len(self.feature_names)} features")
         self.logger.info(f"Class distribution - Train: {self.y_train.value_counts().to_dict()}")
+        self.logger.info(f"Class distribution - Val: {self.y_val.value_counts().to_dict()}")
+        self.logger.info(f"Class distribution - Test: {self.y_test.value_counts().to_dict()}")
         
         return self
     
@@ -208,26 +210,48 @@ class XGBoostBaseline:
         y_pred_proba = self.model.predict(dtest)
         y_pred = (y_pred_proba > 0.5).astype(int)
         
-        # Calculate metrics
-        metrics = {
-            'accuracy': accuracy_score(y, y_pred),
-            'precision': precision_score(y, y_pred),
-            'recall': recall_score(y, y_pred),
-            'f1': f1_score(y, y_pred),
-            'auc_roc': roc_auc_score(y, y_pred_proba)
-        }
+        # Calculate metrics (handle edge cases)
+        metrics = {}
+        
+        try:
+            metrics['accuracy'] = accuracy_score(y, y_pred)
+        except:
+            metrics['accuracy'] = np.nan
+            
+        try:
+            metrics['precision'] = precision_score(y, y_pred, zero_division=0)
+        except:
+            metrics['precision'] = np.nan
+            
+        try:
+            metrics['recall'] = recall_score(y, y_pred, zero_division=0)
+        except:
+            metrics['recall'] = np.nan
+            
+        try:
+            metrics['f1'] = f1_score(y, y_pred, zero_division=0)
+        except:
+            metrics['f1'] = np.nan
+            
+        try:
+            metrics['auc_roc'] = roc_auc_score(y, y_pred_proba)
+        except:
+            metrics['auc_roc'] = np.nan
         
         # Log metrics
         self.logger.info(f"{dataset_name} Performance:")
         for metric, value in metrics.items():
-            self.logger.info(f"  {metric}: {value:.4f}")
+            if not np.isnan(value):
+                self.logger.info(f"  {metric}: {value:.4f}")
+            else:
+                self.logger.info(f"  {metric}: N/A")
         
         # Confusion matrix
         cm = confusion_matrix(y, y_pred)
         self.logger.info(f"Confusion Matrix:\n{cm}")
         
         # Classification report
-        report = classification_report(y, y_pred)
+        report = classification_report(y, y_pred, zero_division=0)
         self.logger.info(f"Classification Report:\n{report}")
         
         return metrics, y_pred_proba
@@ -252,7 +276,7 @@ class XGBoostBaseline:
                 
                 metrics, _ = self.evaluate(X_strategy, y_strategy, f"Strategy: {strategy_name}")
                 results[strategy_name] = metrics
-                results[strategy_name]['n_samples'] = strategy_mask.sum()
+                results[strategy_name]['n_samples'] = int(strategy_mask.sum())  # Convert to int
         
         return results
     
@@ -355,16 +379,31 @@ class XGBoostBaseline:
         # Save model
         self.save_model()
         
+        # Convert numpy types to Python native types for JSON serialization
+        def convert_to_native(obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {k: convert_to_native(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_to_native(v) for v in obj]
+            else:
+                return obj
+        
         # Save results
         results = {
-            'train_metrics': train_metrics,
-            'val_metrics': val_metrics,
-            'test_metrics': test_metrics,
-            'strategy_results': strategy_results
+            'train_metrics': convert_to_native(train_metrics),
+            'val_metrics': convert_to_native(val_metrics),
+            'test_metrics': convert_to_native(test_metrics),
+            'strategy_results': convert_to_native(strategy_results)
         }
         
         with open('models/phase1/results.json', 'w') as f:
-            json.dump(results, f, indent=2)
+            json.dump(results, f, indent=2, default=str)  # Use default=str as fallback
         
         self.logger.info("Phase 1 pipeline completed successfully!")
         
@@ -379,13 +418,24 @@ def main():
     print("\n" + "="*50)
     print("PHASE 1 RESULTS SUMMARY")
     print("="*50)
-    print(f"Test Accuracy: {results['test_metrics']['accuracy']:.4f}")
-    print(f"Test AUC-ROC: {results['test_metrics']['auc_roc']:.4f}")
-    print(f"Test F1 Score: {results['test_metrics']['f1']:.4f}")
+    
+    # Handle NaN values in output
+    test_metrics = results['test_metrics']
+    for metric in ['accuracy', 'auc_roc', 'f1']:
+        value = test_metrics.get(metric, 'N/A')
+        if isinstance(value, (int, float)) and not np.isnan(value):
+            print(f"Test {metric.replace('_', ' ').title()}: {value:.4f}")
+        else:
+            print(f"Test {metric.replace('_', ' ').title()}: N/A")
     
     print("\nPerformance by Strategy:")
     for strategy, metrics in results['strategy_results'].items():
-        print(f"  {strategy}: Accuracy={metrics['accuracy']:.4f}, n={metrics['n_samples']}")
+        acc = metrics.get('accuracy', 'N/A')
+        n_samples = metrics.get('n_samples', 0)
+        if isinstance(acc, (int, float)) and not np.isnan(acc):
+            print(f"  {strategy}: Accuracy={acc:.4f}, n={n_samples}")
+        else:
+            print(f"  {strategy}: Accuracy=N/A, n={n_samples}")
 
 
 if __name__ == "__main__":
