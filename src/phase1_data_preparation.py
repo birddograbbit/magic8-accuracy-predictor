@@ -18,6 +18,7 @@ from sklearn.preprocessing import StandardScaler
 import json
 import os
 import logging
+import pytz
 
 class Phase1DataPreparation:
     def __init__(self, data_path='data/normalized/normalized_aggregated.csv'):
@@ -41,6 +42,11 @@ class Phase1DataPreparation:
         self.logger.info("Loading normalized data...")
         self.df = pd.read_csv(self.data_path)
         self.df['interval_datetime'] = pd.to_datetime(self.df['interval_datetime'])
+        
+        # Convert to timezone-naive if it has timezone info
+        if self.df['interval_datetime'].dt.tz is not None:
+            self.df['interval_datetime'] = self.df['interval_datetime'].dt.tz_localize(None)
+            
         self.df = self.df.sort_values('interval_datetime')
         self.logger.info(f"Loaded {len(self.df)} records")
         return self
@@ -71,6 +77,12 @@ class Phase1DataPreparation:
             if os.path.exists(filename):
                 df = pd.read_csv(filename)
                 df['date'] = pd.to_datetime(df['date'])
+                
+                # Remove timezone info to make timestamps timezone-naive
+                # This converts from UTC to timezone-naive, maintaining the same time values
+                if df['date'].dt.tz is not None:
+                    df['date'] = df['date'].dt.tz_localize(None)
+                
                 df = df.set_index('date')
                 self.price_data[symbol] = df
                 self.logger.info(f"Loaded {len(df)} records for {symbol}")
@@ -82,6 +94,11 @@ class Phase1DataPreparation:
         if os.path.exists(vix_file):
             self.vix_data = pd.read_csv(vix_file)
             self.vix_data['date'] = pd.to_datetime(self.vix_data['date'])
+            
+            # Remove timezone info
+            if self.vix_data['date'].dt.tz is not None:
+                self.vix_data['date'] = self.vix_data['date'].dt.tz_localize(None)
+                
             self.vix_data = self.vix_data.set_index('date')
             self.logger.info(f"Loaded {len(self.vix_data)} VIX records")
         else:
@@ -192,6 +209,10 @@ class Phase1DataPreparation:
         
     def _get_nearest_value(self, df, timestamp, column):
         """Get the nearest value from a dataframe based on timestamp"""
+        # Ensure timestamp is timezone-naive
+        if hasattr(timestamp, 'tz') and timestamp.tz is not None:
+            timestamp = timestamp.tz_localize(None)
+            
         if timestamp in df.index:
             return df.loc[timestamp, column]
         else:
