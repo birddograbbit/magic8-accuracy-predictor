@@ -75,6 +75,11 @@ class XGBoostBaseline:
         
         self.feature_names = self.feature_info['feature_names']
         
+        # Remove 'vix_regime' if it exists (the original categorical column)
+        if 'vix_regime' in self.feature_names:
+            self.logger.warning("Removing 'vix_regime' categorical column from features")
+            self.feature_names.remove('vix_regime')
+        
         # Prepare features and targets
         self.X_train = self.train_df[self.feature_names]
         self.y_train = self.train_df['target']
@@ -99,11 +104,22 @@ class XGBoostBaseline:
         self.X_val = self.X_val.fillna(0)
         self.X_test = self.X_test.fillna(0)
         
-        # Scale numerical features (skip one-hot encoded features)
+        # Scale numerical features (skip one-hot encoded features and categorical features)
         non_binary_features = []
         for feature in self.feature_names:
+            # Skip binary/categorical features
             if not any(feature.startswith(prefix) for prefix in ['strategy_', 'vix_regime_', 'is_']):
-                non_binary_features.append(feature)
+                # Also skip the original vix_regime column if it somehow still exists
+                if feature != 'vix_regime':
+                    # Check if the column contains numeric data
+                    try:
+                        # Try to convert a sample to float to verify it's numeric
+                        pd.to_numeric(self.X_train[feature], errors='coerce')
+                        non_binary_features.append(feature)
+                    except:
+                        self.logger.warning(f"Skipping non-numeric feature: {feature}")
+        
+        self.logger.info(f"Scaling {len(non_binary_features)} numeric features")
         
         # Fit scaler on training data
         if non_binary_features:
