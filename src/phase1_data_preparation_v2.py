@@ -10,77 +10,86 @@ from phase1_data_preparation import Phase1DataPreparation
 class Phase1DataPreparationV2(Phase1DataPreparation):
     """Modified version that focuses on market condition features"""
     
-    def select_phase1_features(self):
-        """Select features focusing on market conditions, not trade magnitude"""
+    def select_features(self):
+        """Select features focusing on market conditions, not trade magnitude
         
-        # Get all available features
-        all_features = [col for col in self.df.columns if col not in ['target', 'date', 'time_est']]
+        This overrides the parent method to exclude risk/reward features
+        """
         
-        # REMOVE risk/reward features that dominate but don't predict probability
+        # First call parent method to get all available features
+        super().select_features()
+        
+        # Features to exclude that dominate but don't predict probability
         features_to_exclude = ['prof_reward', 'prof_risk', 'risk_reward_ratio']
         
-        # OR ALTERNATIVELY: Transform them to categorical buckets
-        # self.df['risk_bucket'] = pd.qcut(self.df['prof_risk'], q=5, labels=['very_low', 'low', 'medium', 'high', 'very_high'])
-        # self.df['reward_bucket'] = pd.qcut(self.df['prof_reward'], q=5, labels=['very_low', 'low', 'medium', 'high', 'very_high'])
+        # Remove excluded features from feature_names
+        self.feature_names = [f for f in self.feature_names if f not in features_to_exclude]
         
-        # Focus on these feature groups:
-        temporal_features = [f for f in all_features if any(x in f for x in ['hour', 'minute', 'day_of_week', 'minutes_to_close'])]
-        
-        vix_features = [f for f in all_features if 'vix' in f.lower()]
-        
-        price_features = [f for f in all_features if any(x in f for x in ['sma', 'momentum', 'volatility', 'rsi', 'price_position'])]
-        
-        strategy_features = [f for f in all_features if 'strategy_' in f]
-        
-        # Premium normalized by price is OK - it's a relative measure
-        trade_features = ['premium_normalized']
-        
-        # Combine selected features
-        selected_features = (temporal_features + vix_features + price_features + 
-                           strategy_features + trade_features)
-        
-        # Remove excluded features
-        selected_features = [f for f in selected_features if f not in features_to_exclude]
-        
-        # Remove duplicates while preserving order
-        selected_features = list(dict.fromkeys(selected_features))
-        
-        print(f"Selected {len(selected_features)} features for Phase 1 V2")
+        print(f"Selected {len(self.feature_names)} features for Phase 1 V2")
         print(f"Excluded: {features_to_exclude}")
         
-        return selected_features
+        return self
     
     def add_enhanced_features(self):
-        """Add interaction features between time and market conditions"""
+        """Add interaction features between time and market conditions
+        
+        This should be called AFTER add_basic_temporal_features() and add_vix_features()
+        """
         
         # Time of day × VIX regime interaction
         # High VIX at market open behaves differently than high VIX at close
-        self.df['morning_high_vix'] = ((self.df['hour'] < 11) & 
-                                       (self.df.get('vix_regime_high', 0) == 1)).astype(int)
-        
-        self.df['afternoon_high_vix'] = ((self.df['hour'] >= 14) & 
-                                        (self.df.get('vix_regime_high', 0) == 1)).astype(int)
+        if 'vix_regime_high' in self.df.columns:
+            self.df['morning_high_vix'] = ((self.df['hour'] < 11) & 
+                                           (self.df.get('vix_regime_high', 0) == 1)).astype(int)
+            
+            self.df['afternoon_high_vix'] = ((self.df['hour'] >= 14) & 
+                                            (self.df.get('vix_regime_high', 0) == 1)).astype(int)
         
         # Day of week × market conditions
         # Mondays and Fridays often behave differently
-        self.df['monday_trade'] = (self.df['day_of_week'] == 0).astype(int)
-        self.df['friday_trade'] = (self.df['day_of_week'] == 4).astype(int)
+        if 'day_of_week' in self.df.columns:
+            self.df['monday_trade'] = (self.df['day_of_week'] == 0).astype(int)
+            self.df['friday_trade'] = (self.df['day_of_week'] == 4).astype(int)
         
         # Time to close buckets (for 0DTE decay acceleration)
-        self.df['final_hour'] = (self.df['minutes_to_close'] <= 60).astype(int)
-        self.df['final_30min'] = (self.df['minutes_to_close'] <= 30).astype(int)
+        if 'minutes_to_close' in self.df.columns:
+            self.df['final_hour'] = (self.df['minutes_to_close'] <= 60).astype(int)
+            self.df['final_30min'] = (self.df['minutes_to_close'] <= 30).astype(int)
         
         print("Added enhanced time × market interaction features")
+        
+        return self
+    
+    def run_phase1_pipeline(self):
+        """Run the complete Phase 1 V2 data preparation pipeline"""
+        
+        # Load normalized trade data
+        self.load_data()
+        
+        # Load IBKR historical price data
+        self.load_ibkr_data()
+        
+        # Add features in correct order
+        self.add_basic_temporal_features()  # This creates day_of_week
+        self.add_price_features()
+        self.add_vix_features()
+        self.add_trade_features()
+        
+        # Add enhanced features AFTER basic features exist
+        self.add_enhanced_features()
+        
+        # Create target
+        self.create_target_variable()
+        
+        # Select features (excluding risk/reward)
+        self.select_features()
+        
+        # Split and save
+        train_data, val_data, test_data = self.split_data()
+        
+        return train_data, val_data, test_data
 
 
 if __name__ == "__main__":
     processor = Phase1DataPreparationV2()
-    processor.load_data()
-    processor.add_enhanced_features()  # Add this before other features
-    processor.engineer_features()
-    processor.create_target_variable()
-    
-    # Rest of pipeline...
-    features = processor.select_phase1_features()
-    processor.split_data(features)
-    processor.save_processed_data()
+    train_data, val_data, test_data = processor.run_phase1_pipeline()
