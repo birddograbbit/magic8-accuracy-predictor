@@ -321,19 +321,57 @@ class Phase1DataPreparation:
         return self
         
     def create_target_variable(self):
-        """Create binary target variable from profit data"""
-        self.logger.info("Creating target variable...")
+        """Create binary target variable from profit data
         
-        # Primary target from trades data
-        if 'trad_profited' in self.df.columns:
-            self.df['target'] = self.df['trad_profited'].map({True: 1, False: 0})
+        Uses Raw profit/loss as the determinant:
+        - Raw profit > 0 = Win (1)
+        - Raw profit <= 0 = Loss (0)
         
-        # Fill missing targets with profit data if available
-        if 'prof_profit' in self.df.columns:
-            profit_target = (self.df['prof_profit'] > 0).astype(int)
-            self.df['target'] = self.df['target'].fillna(profit_target)
+        Raw P/L represents the pure quality of the trade without external management.
+        """
+        self.logger.info("Creating target variable from Raw profit data...")
         
-        self.logger.info(f"Target distribution: {self.df['target'].value_counts().to_dict()}")
+        # First, let's find the correct Raw profit column
+        raw_profit_col = None
+        
+        # Look for columns containing 'raw' (case insensitive)
+        for col in self.df.columns:
+            if 'raw' in col.lower() and ('profit' in col.lower() or 'p/l' in col.lower() or 'pnl' in col.lower()):
+                raw_profit_col = col
+                self.logger.info(f"Found Raw profit column: {col}")
+                break
+        
+        # If no raw profit column found, try common variations
+        if raw_profit_col is None:
+            # Try common column names
+            possible_names = ['prof_raw', 'prof_raw_profit', 'prof_raw_pnl', 'prof_raw_p/l', 
+                            'trad_raw', 'trad_raw_profit', 'Raw', 'raw', 'raw_profit', 'raw_pnl']
+            for col_name in possible_names:
+                if col_name in self.df.columns:
+                    raw_profit_col = col_name
+                    self.logger.info(f"Found Raw profit column: {col_name}")
+                    break
+        
+        # Create target based on Raw profit
+        if raw_profit_col is not None:
+            # Raw profit > 0 = Win (1), Raw profit <= 0 = Loss (0)
+            self.df['target'] = (self.df[raw_profit_col] > 0).astype(int)
+            
+            # Log statistics
+            non_null_count = self.df['target'].notna().sum()
+            self.logger.info(f"Created target from {raw_profit_col}: {non_null_count} records")
+            self.logger.info(f"Target distribution: {self.df['target'].value_counts().to_dict()}")
+            self.logger.info(f"Win rate: {self.df['target'].mean():.2%}")
+        else:
+            # Fallback to prof_profit if no raw column found
+            self.logger.warning("No Raw profit column found! Falling back to prof_profit")
+            if 'prof_profit' in self.df.columns:
+                self.df['target'] = (self.df['prof_profit'] > 0).astype(int)
+                self.logger.info(f"Created target from prof_profit: {self.df['target'].notna().sum()} records")
+                self.logger.info(f"Target distribution: {self.df['target'].value_counts().to_dict()}")
+            else:
+                raise ValueError("No suitable profit column found for creating target variable!")
+        
         return self
         
     def select_features(self):
