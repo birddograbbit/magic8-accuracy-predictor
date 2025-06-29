@@ -40,10 +40,17 @@ data/processed/
 *.pkl
 *.h5
 
+# Data backups
+data/phase1_processed_backup_*/
+
 # Models
 checkpoints/
 *.pth
 *.pt
+
+# Model outputs
+models/*/results.json
+models/*/feature_importance.png
 
 # Logs
 logs/
@@ -53,6 +60,13 @@ logs/
 .ipynb_checkpoints/
 *.ipynb
 
+# Temporary outputs
+*.png
+*.jpg
+sample_*.csv
+feature_predictiveness_results.csv
+feature_predictiveness_analysis.png
+
 # Environment
 .env
 
@@ -60,4 +74,9 @@ logs/
 .pytest_cache/
 .coverage
 htmlcov/
-data/
+
+# Keep important data directories
+!data/.gitkeep
+!data/normalized/.gitkeep
+!data/ibkr/.gitkeep
+!data/phase1_processed/.gitkeep
