@@ -1,0 +1,165 @@
+# Feature Configuration for Magic8 Accuracy Predictor
+
+# Trading symbols and strategies
+symbols:
+  indices:
+    - SPX
+    - SPY
+    - XSP
+    - NDX
+    - QQQ
+    - RUT
+  stocks:
+    - AAPL
+    - TSLA
+
+strategies:
+  - name: "Butterfly"
+    type: "debit"
+    risk_profile: "limited_risk_limited_reward"
+  - name: "Iron Condor"
+    type: "credit"
+    risk_profile: "high_probability_limited_reward"
+  - name: "Vertical Spread"
+    type: "credit"
+    risk_profile: "directional_limited_risk"
+
+# Feature categories with specific configurations
+features:
+  temporal:
+    cyclical_encoding: true
+    time_to_expiry:
+      enabled: true
+      decay_factor: "exponential"
+      minutes_in_trading_day: 390
+    intraday_patterns:
+      - "market_open_30min"
+      - "lunch_hour"
+      - "power_hour"
+    event_indicators:
+      - "fed_days"
+      - "economic_releases"
+      - "options_expiration"
+      - "quarter_end"
+
+  market_structure:
+    vix:
+      enabled: true
+      features:
+        - "close"
+        - "ma5"
+        - "ma20"
+        - "change"
+        - "change_5"
+        - "rank"
+        - "momentum"
+    vvix:
+      enabled: true
+      synthetic_if_missing: true
+    volatility_regimes:
+      - name: "ultra_low_vol"
+        vix_range: [0, 12]
+      - name: "low_vol"
+        vix_range: [12, 15]
+      - name: "normal_vol"
+        vix_range: [15, 20]
+      - name: "elevated_vol"
+        vix_range: [20, 25]
+      - name: "high_vol"
+        vix_range: [25, 100]
+
+  cross_assets:
+    currencies:
+      DXY: "DX-Y.NYB"  # Dollar Index
+    bonds:
+      TY: "ZN=F"       # 10-Year Treasury futures
+      TU: "ZT=F"       # 2-Year Treasury futures
+    sectors:
+      XLF: "XLF"       # Financials
+      XLK: "XLK"       # Technology
+    futures:
+      ES: "ES=F"       # S&P 500 futures
+      NQ: "NQ=F"       # NASDAQ futures
+
+  technical:
+    rsi:
+      period: 14
+    moving_averages:
+      periods: [5, 10, 20, 50]
+    momentum:
+      periods: [5, 10]
+    volatility:
+      periods: [10, 20]
+    bollinger_bands:
+      period: 20
+      std_dev: 2
+    atr:
+      period: 14
+
+  microstructure:
+    price_action:
+      - "acceleration"
+      - "daily_position"
+      - "range_normalized"
+    pivot_points:
+      type: "classic"
+      calculate_distances: true
+      normalize_by_atr: true
+
+  option_specific:
+    greeks:
+      - "delta"
+      - "delta_squared"  # Gamma proxy
+    moneyness:
+      - "raw"
+      - "log"
+    premiums:
+      normalize_by_price: true
+    risk_reward:
+      calculate_ratio: true
+
+# Data processing parameters
+data_processing:
+  sequence_length: 60  # 5 hours of 5-minute bars
+  prediction_horizon: 1
+  train_val_test_split: [0.6, 0.2, 0.2]
+  handle_missing:
+    method: "forward_fill"
+    fallback: 0
+  handle_infinity:
+    replace_with: 0
+
+# Market hours (Eastern Time)
+market_hours:
+  regular:
+    start: "09:30"
+    end: "16:00"
+  extended:
+    pre_market_start: "04:00"
+    after_hours_end: "20:00"
+
+# Feature importance tracking
+feature_importance:
+  track_importance: true
+  update_frequency: "daily"
+  top_n_features: 50
+  by_category: true
+  by_strategy: true
+
+# Performance thresholds
+performance:
+  min_accuracy: 0.65
+  min_accuracy_per_strategy: 0.62
+  max_prediction_latency_ms: 50
+  max_feature_calc_latency_ms: 20
+
+# Risk management
+risk_management:
+  confidence_threshold: 0.6
+  max_consecutive_losses: 5
+  position_sizing:
+    base_on_confidence: true
+    scale_by_volatility: true
+  circuit_breakers:
+    daily_loss_limit: -0.05
+    volatility_spike_threshold: 2.0
