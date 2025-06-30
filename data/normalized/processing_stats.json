@@ -1,0 +1,31 @@
+{
+  "total_trades": 1085312,
+  "date_range": "2023-01-13 09:35:00 to 2025-06-27 15:57:00",
+  "overall_win_rate": 0.7643359697487911,
+  "total_profit": 293446069.23,
+  "format_stats": {
+    "old_format": 213,
+    "new_format": 406,
+    "trades_format": 0,
+    "errors": 0,
+    "timestamp_errors": 0,
+    "summary_rows_removed": 88309,
+    "total_rows_processed": 1085312
+  },
+  "symbols_processed": [
+    "AAPL",
+    "NDX",
+    "QQQ",
+    "RUT",
+    "SPX",
+    "SPY",
+    "TSLA",
+    "XSP"
+  ],
+  "strategies_found": [
+    "Butterfly",
+    "Iron Condor",
+    "Sonar",
+    "Vertical"
+  ]
+}
