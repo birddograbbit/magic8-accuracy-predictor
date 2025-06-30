@@ -2,6 +2,7 @@
 """
 Fixed Magic8 Data Processing Pipeline
 Properly handles summary statistics at the end of CSV files
+Fixed JSON serialization for numpy types
 """
 
 import pandas as pd
@@ -70,7 +71,7 @@ class Magic8DataProcessor:
                 else:
                     print(f"  Sample removed: {invalid_rows['Day'].head(5).tolist()}")
                 
-                self.format_stats['summary_rows_removed'] += invalid_date_count
+                self.format_stats['summary_rows_removed'] += int(invalid_date_count)
                 df = df[valid_date_mask].copy()
         
         # Also remove rows where Symbol is not in valid symbols
@@ -395,13 +396,28 @@ class Magic8DataProcessor:
             print(f"  Win rate: {year_df['win'].mean():.2%}")
             print(f"  Total profit: ${year_df['profit'].sum():,.2f}")
         
+        # Convert numpy types to native Python types for JSON serialization
+        def convert_numpy_types(obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            else:
+                return obj
+        
         # Save stats
         stats = {
-            'total_trades': len(df),
+            'total_trades': int(len(df)),
             'date_range': f"{df['timestamp'].min()} to {df['timestamp'].max()}",
             'overall_win_rate': float(df['win'].mean()),
             'total_profit': float(df['profit'].sum()),
-            'format_stats': self.format_stats,
+            'format_stats': convert_numpy_types(self.format_stats),
             'symbols_processed': sorted(df['symbol'].unique().tolist()),
             'strategies_found': sorted(df['strategy'].unique().tolist())
         }
