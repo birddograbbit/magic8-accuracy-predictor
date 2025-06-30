@@ -1,175 +1,187 @@
 # Magic8 Accuracy Predictor - Codebase Cleanup Plan
 
 ## Overview
-This document tracks the organization and cleanup status of the project codebase as of June 29, 2025.
+This document tracks the organization and cleanup status of the project codebase as of June 30, 2025.
 
-## File Categories
+## Current Status Update (June 30, 2025)
+
+### Major Progress Made ✅
+1. **Data Processing Fixed**: Replaced slow processor with optimized version that processes 1.5M trades in 0.6 minutes
+2. **All Strategies Found**: Including Sonar (was missing due to wrong column parsing)
+3. **Column Mapping Fixed**: Created `phase1_data_preparation_fixed.py` to handle actual CSV column names
+
+### Critical File Confusion Issues 🚨
+- Multiple versions of phase1_data_preparation.py (original, v2, fixed)
+- Multiple data processing scripts (fixed, fixed_v2, optimized, optimized_v2)
+- Multiple data directories with different processing results
+- Inconsistent column names between processed data and expected format
+
+## File Categories (UPDATED)
 
 ### ✅ Core Production Files (Keep Permanently)
 
-#### Main Source Code
-- `src/phase1_data_preparation.py` - Base data preparation pipeline
-- `src/phase1_data_preparation_v2.py` - Improved version focusing on market conditions
+#### Main Source Code - THE CORRECT VERSIONS
+- `process_magic8_data_optimized_v2.py` - **USE THIS** for data processing (batch processing, 0.6 min)
+- `src/phase1_data_preparation_fixed.py` - **USE THIS** for Phase 1 ML pipeline (handles column mapping)
 - `src/models/xgboost_baseline.py` - XGBoost model implementation
-- `src/evaluation/` (to be created) - Model evaluation scripts
 
-#### Configuration
-- `requirements.txt` - Python dependencies
-- `.gitignore` - Git ignore rules
-- `config.yaml` (if exists) - Project configuration
+#### Critical Shell Scripts
+- `run_data_processing_v2.sh` - Runs the optimized v2 processor
+- `download_phase1_data.sh` - IBKR data download helper
 
-#### Data Download Scripts
-- `ibkr_downloader.py` - IBKR data download utility
-- `download_phase1_data.sh` - Helper script for downloading all symbols
+### 🗑️ DEPRECATED Files (Remove After Cleanup)
 
-### 📊 Analysis & Diagnostic Scripts (Keep During Development)
+#### Old Data Processors (DO NOT USE)
+- `process_magic8_data_fixed.py` - Old version, slow
+- `process_magic8_data_fixed_v2.py` - Old version, slow
+- `process_magic8_data_optimized.py` - Has datetime column issues
+- `normalize_data.py` - Original slow processor
+- `normalize_data_large.py` - Memory inefficient
 
-These are useful for debugging and analysis but can be archived after Phase 1.5:
+#### Old Phase 1 Scripts (DO NOT USE)
+- `src/phase1_data_preparation.py` - Expects wrong column names
+- `src/phase1_data_preparation_v2.py` - Outdated
+- `src/phase1_data_preparation_original.py` - Backup of wrong version
 
-- `analyze_feature_predictiveness.py` - Feature correlation analysis
-- `inspect_profit_columns.py` - Data exploration for profit columns
-- `test_data_loading.py` - Data loading verification
-- `diagnose_features.py` - Feature engineering diagnostics
-- `diagnose_class_imbalance.py` - Class distribution analysis
-- `rebuild_data.py` - Data pipeline rebuild utility
-- `verify_data.py` - Data verification script
+#### Redundant Scripts
+- `run_data_processing.sh` - Uses old processor
+- `run_data_processing_optimized.sh` - Uses non-v2 version
+- `fix_csv_parsing.py` - Temporary fix, not needed
+- `fix_csv_v2.py` - Temporary fix, not needed
 
-### 📝 Documentation (Keep & Update)
+### 📊 Analysis & Diagnostic Scripts (Keep for Now)
+- `check_optimized_data.py` - Useful for verifying data
+- `compare_data_sources.py` - Useful for checking differences
+- `diagnose_class_imbalance.py` - May need for Phase 2
+- `analyze_feature_predictiveness.py` - Useful for feature analysis
 
-#### Primary Documentation
-- `README.md` - Main project documentation
-- `IMPLEMENTATION_PLAN.md` - Overall project plan
-- `PHASE1_PLAN.md` - Phase 1 specific plan
-- `PROJECT_KNOWLEDGE_BASE.md` - Comprehensive project knowledge
-- `PROJECT_SUMMARY_NEXT_CHAT.md` - Current status for continuity
+### 📝 Documentation Updates Needed
 
-#### Status & Summary Documents
-- `IMPLEMENTATION_SUMMARY.md` - Implementation progress
-- `PHASE1_SUMMARY.md` - Phase 1 completion summary
-- `FIX_SUMMARY.md` - Bug fixes and solutions
-- `phase1_5_action_plan.py` - Current action plan (convert to .md)
+#### Files to Update
+1. `PROJECT_KNOWLEDGE_BASE.md` - Update with June 30 progress
+2. `PROJECT_SUMMARY_NEXT_CHAT.md` - Update with current status
+3. `PHASE1_SUMMARY.md` - Mark data processing as complete
+4. `README.md` - Update quick start instructions
 
-### 🗑️ Temporary Files (Can Remove After Phase 1.5)
+#### Files to Remove/Archive
+- `DATA_PROCESSING_FIX.md` - Obsolete after fix
+- `DATA_PROCESSING_FIX_README.md` - Duplicate
+- `FIX_SUMMARY.md` - Obsolete
+- `TIMESTAMP_ISSUE_FIX.md` - Issue resolved
+- `PHASE1_ISSUES_AND_SOLUTIONS.md` - Merged into main docs
+- `MAGIC8_DATA_DISCOVERIES_SUMMARY.md` - Merged into knowledge base
 
-- `sample_profit_data.csv` - Sample data for debugging
-- `feature_predictiveness_results.csv` - Analysis output
-- `feature_predictiveness_analysis.png` - Visualization output
-- Any `.pyc` or `__pycache__` files
-- Jupyter notebook checkpoints
+### 📁 Data Directory Cleanup
 
-### 📁 Directory Structure Cleanup
+#### Keep These
+```
+data/
+├── source/                     # Original Magic8 CSV files
+├── processed_optimized_v2/     # CURRENT processed data (1.5M trades)
+├── normalized/                 # Where phase1 expects data
+├── ibkr/                      # IBKR market data
+└── phase1_processed/          # ML-ready features (after phase1 runs)
+```
 
-Current structure that should be maintained:
+#### Remove These
+```
+data/
+├── processed/                 # Old, incomplete
+├── processed_fixed/           # Old version
+├── processed_fixed_v2/        # Old version
+├── processed_optimized/       # Has datetime issues
+└── phase1_processed_backup_*/ # Old backups
+```
+
+## Immediate Cleanup Actions (Do Now)
+
+### 1. Consolidate to Correct Versions
+```bash
+# Use the fixed phase1 script
+cp src/phase1_data_preparation_fixed.py src/phase1_data_preparation.py
+
+# Remove old versions
+rm src/phase1_data_preparation_original.py
+rm src/phase1_data_preparation_v2.py
+
+# Archive old processors
+mkdir -p archive/old_processors
+mv process_magic8_data_fixed*.py archive/old_processors/
+mv normalize_data*.py archive/old_processors/
+```
+
+### 2. Clean Data Directories
+```bash
+# Archive old processed data
+mkdir -p archive/old_data
+mv data/processed archive/old_data/
+mv data/processed_fixed* archive/old_data/
+mv data/processed_optimized archive/old_data/  # Keep only v2
+
+# Ensure normalized data is current
+cp data/processed_optimized_v2/magic8_trades_complete.csv data/normalized/normalized_aggregated.csv
+```
+
+### 3. Update Documentation
+- Remove all obsolete .md files listed above
+- Update remaining docs with current status
+- Create single SOURCE_OF_TRUTH.md if needed
+
+## Git Cleanup Commands
+
+```bash
+# Add archive to gitignore
+echo "archive/" >> .gitignore
+
+# Remove tracking of old files
+git rm process_magic8_data_fixed*.py
+git rm normalize_data*.py
+git rm src/phase1_data_preparation_v2.py
+git rm src/phase1_data_preparation_original.py
+
+# Remove obsolete docs
+git rm DATA_PROCESSING_FIX*.md
+git rm FIX_SUMMARY.md
+git rm TIMESTAMP_ISSUE_FIX.md
+```
+
+## Final Clean Structure
+
 ```
 magic8-accuracy-predictor/
-├── data/
-│   ├── normalized/              # Original trade data
-│   ├── ibkr/                   # IBKR historical data
-│   ├── phase1_processed/       # Processed features
-│   └── phase1_processed_backup_*/ # Backups (can archive)
 ├── src/
-│   ├── models/                 # Model implementations
-│   ├── evaluation/             # Evaluation scripts (create)
-│   └── utils/                  # Utility functions (create)
-├── notebooks/                  # Jupyter notebooks (create)
-├── models/                     # Saved models
-│   └── phase1/                # Phase 1 models
-├── logs/                      # Log files (auto-generated)
-└── docs/                      # Move some .md files here
+│   ├── phase1_data_preparation.py  # Fixed version only
+│   └── models/
+│       └── xgboost_baseline.py
+├── data/
+│   ├── source/                     # Raw CSV files
+│   ├── normalized/                 # Current processed data
+│   ├── ibkr/                      # Market data
+│   └── phase1_processed/          # ML features
+├── process_magic8_data_optimized_v2.py  # The ONE processor
+├── run_data_processing_v2.sh            # The ONE runner
+├── download_phase1_data.sh              # IBKR helper
+├── README.md                            # Updated instructions
+├── PROJECT_KNOWLEDGE_BASE.md            # Comprehensive status
+├── IMPLEMENTATION_PLAN.md               # Overall plan
+├── PHASE1_PLAN.md                       # Phase 1 details
+└── requirements.txt
 ```
 
-## Cleanup Actions
+## Next Steps After Cleanup
 
-### Immediate Actions (Do Now)
-1. ✅ Fix `day_of_week` derivation in scripts
-2. ❌ Create missing directories: `src/evaluation/`, `src/utils/`, `notebooks/`
-3. ❌ Move utility scripts to `src/utils/`
-4. ❌ Convert `phase1_5_action_plan.py` to `PHASE1_5_PLAN.md`
+1. **Run Phase 1 with clean codebase**:
+   ```bash
+   python src/phase1_data_preparation.py
+   python src/models/xgboost_baseline.py
+   ```
 
-### Phase 1.5 Completion Actions
-1. Archive diagnostic scripts to `scripts/diagnostics/`
-2. Move documentation to `docs/` folder
-3. Create proper test suite in `tests/`
-4. Remove temporary output files
+2. **Continue to Phase 2 planning** based on results
 
-### Before Phase 2 Actions
-1. Archive Phase 1 specific scripts
-2. Clean up data backups (keep only latest)
-3. Document lessons learned
-4. Update all documentation
-
-## Git Cleanup
-
-### Files to Add to .gitignore
-```
-# Temporary outputs
-*.csv
-*.png
-*.jpg
-
-# Python
-__pycache__/
-*.pyc
-.pytest_cache/
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Logs
-logs/
-*.log
-
-# Data backups
-data/phase1_processed_backup_*/
-
-# Model outputs
-models/*/results.json
-models/*/feature_importance.png
-```
-
-## Script Consolidation Plan
-
-### Combine Similar Scripts
-1. Merge all diagnostic scripts into `src/utils/diagnostics.py`
-2. Create `src/utils/data_validation.py` from test scripts
-3. Consolidate feature analysis into `src/evaluation/feature_analysis.py`
-
-### Create New Organized Modules
-- `src/utils/plotting.py` - All visualization functions
-- `src/utils/metrics.py` - Performance metrics calculations
-- `src/config/settings.py` - Centralized configuration
-
-## Timeline
-
-### Week 1 (Current)
-- ✅ Fix immediate issues (day_of_week)
-- ❌ Create missing directories
-- ❌ Start moving scripts to proper locations
-
-### Week 2
-- Archive diagnostic scripts after use
-- Consolidate utility functions
-- Update documentation
-
-### Week 3
-- Final cleanup before Phase 2
-- Create comprehensive test suite
-- Archive Phase 1 artifacts
-
-## Maintenance Notes
-
-### Keep Updated
-- This cleanup plan
-- PROJECT_SUMMARY_NEXT_CHAT.md after each session
-- Requirements.txt when adding packages
-
-### Regular Cleanup
-- Remove old log files weekly
-- Clean data backups monthly
-- Update documentation after major changes
+3. **Archive this cleanup plan** once complete
 
 ---
 
-**Last Updated**: June 29, 2025  
-**Status**: In Progress  
-**Priority**: Medium (functionality first, cleanup second)
+**Last Updated**: June 30, 2025, 1:45 PM  
+**Status**: URGENT - Multiple version confusion causing errors  
+**Priority**: HIGH - Clean before proceeding
