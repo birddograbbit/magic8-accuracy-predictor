@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Fixed Magic8 Data Processing Pipeline
-Handles all data format changes correctly and robustly handles timestamp parsing errors
+Handles all data format changes correctly and robustly handles malformed rows
 """
 
 import pandas as pd
@@ -10,6 +10,7 @@ import os
 import glob
 from datetime import datetime
 import json
+import re
 
 class Magic8DataProcessor:
     def __init__(self, source_dir='data/source', output_dir='data/normalized'):
@@ -21,46 +22,80 @@ class Magic8DataProcessor:
             'new_format': 0,
             'trades_format': 0,
             'errors': 0,
-            'timestamp_errors': 0
+            'timestamp_errors': 0,
+            'malformed_rows': 0,
+            'recovered_rows': 0
         }
         
+    def is_valid_time(self, time_str):
+        """Check if a string is a valid time format"""
+        if pd.isna(time_str):
+            return False
+        time_str = str(time_str).strip()
+        # Check for HH:MM format
+        if re.match(r'^\d{1,2}:\d{2}$', time_str):
+            return True
+        # Check for just hour
+        if re.match(r'^\d{1,2}$', time_str):
+            return True
+        return False
+        
     def process_profit_file(self, filepath, date_str):
-        """Process a profit CSV file, handling format changes"""
+        """Process a profit CSV file, handling format changes and malformed rows"""
         try:
+            # First, try to read the CSV normally
             df = pd.read_csv(filepath)
             
             # Add date
             df['date'] = date_str
             
+            # Create a mask for valid rows (rows where Symbol actually contains a symbol)
+            valid_symbols = ['SPX', 'SPY', 'RUT', 'QQQ', 'XSP', 'NDX', 'AAPL', 'TSLA']
+            if 'Symbol' in df.columns:
+                valid_rows = df['Symbol'].isin(valid_symbols)
+                invalid_count = (~valid_rows).sum()
+                
+                if invalid_count > 0:
+                    print(f"Found {invalid_count} rows with invalid symbols in {filepath}")
+                    self.format_stats['malformed_rows'] += invalid_count
+                    
+                    # Check if we can recover some of these rows
+                    # Sometimes the data is just shifted
+                    for idx in df[~valid_rows].index:
+                        row = df.loc[idx]
+                        # Check if any column contains a valid symbol
+                        for col in df.columns:
+                            if row[col] in valid_symbols:
+                                print(f"  Row {idx}: Found symbol '{row[col]}' in column '{col}' instead of Symbol column")
+                                break
+                    
+                    # Keep only valid rows for now
+                    df = df[valid_rows].copy()
+            
             # Handle timestamp creation more robustly
             if 'Hour' in df.columns:
-                # Check if Hour column actually contains hour data
-                # by trying to convert the first non-null value
-                first_hour = df['Hour'].dropna().astype(str).iloc[0] if not df['Hour'].dropna().empty else None
-                
-                if first_hour and (first_hour.isdigit() or ':' in str(first_hour)):
-                    # Hour column seems valid
-                    try:
-                        df['timestamp'] = pd.to_datetime(date_str + ' ' + df['Hour'].astype(str), 
-                                                        format='%Y-%m-%d %H:%M', 
-                                                        errors='coerce')
-                    except:
-                        # If format doesn't match, try without specific format
-                        df['timestamp'] = pd.to_datetime(date_str + ' ' + df['Hour'].astype(str), 
-                                                        errors='coerce')
+                # Create timestamp for each row individually to handle errors better
+                timestamps = []
+                for idx, row in df.iterrows():
+                    hour_val = row['Hour']
                     
-                    # Count how many timestamps failed
-                    failed_timestamps = df['timestamp'].isna().sum()
-                    if failed_timestamps > 0:
-                        print(f"Warning: {failed_timestamps} timestamps failed to parse in {filepath}")
-                        self.format_stats['timestamp_errors'] += failed_timestamps
-                        
-                        # For failed timestamps, just use the date
-                        df.loc[df['timestamp'].isna(), 'timestamp'] = pd.to_datetime(date_str)
-                else:
-                    # Hour column contains non-time data (like symbols)
-                    print(f"Warning: 'Hour' column contains non-time data in {filepath}, using date only")
-                    df['timestamp'] = pd.to_datetime(date_str)
+                    if self.is_valid_time(hour_val):
+                        try:
+                            # Try to parse the timestamp
+                            ts = pd.to_datetime(f"{date_str} {hour_val}", format='%Y-%m-%d %H:%M')
+                            timestamps.append(ts)
+                        except:
+                            # If parsing fails, use just the date
+                            timestamps.append(pd.to_datetime(date_str))
+                            self.format_stats['timestamp_errors'] += 1
+                    else:
+                        # Invalid hour value, use just the date
+                        timestamps.append(pd.to_datetime(date_str))
+                        self.format_stats['timestamp_errors'] += 1
+                        if pd.notna(hour_val):
+                            print(f"  Invalid hour value at row {idx}: '{hour_val}'")
+                
+                df['timestamp'] = timestamps
             else:
                 # No Hour column, just use date
                 df['timestamp'] = pd.to_datetime(date_str)
@@ -68,16 +103,16 @@ class Magic8DataProcessor:
             # Determine profit column based on available columns
             if 'Profit' in df.columns:
                 # Old format (before Nov 2023)
-                df['profit'] = df['Profit']
+                df['profit'] = pd.to_numeric(df['Profit'], errors='coerce')
                 df['profit_source'] = 'Profit'
                 self.format_stats['old_format'] += 1
                 
             elif 'Raw' in df.columns and 'Managed' in df.columns:
                 # New format (after Nov 2023)
                 # Use Raw profit as the primary source
-                df['profit'] = df['Raw']
+                df['profit'] = pd.to_numeric(df['Raw'], errors='coerce')
                 df['profit_source'] = 'Raw'
-                df['managed_profit'] = df['Managed']
+                df['managed_profit'] = pd.to_numeric(df['Managed'], errors='coerce')
                 self.format_stats['new_format'] += 1
                 
             else:
@@ -85,15 +120,15 @@ class Magic8DataProcessor:
                 self.format_stats['errors'] += 1
                 return None
             
-            # Standardize column names
+            # Standardize column names with error handling
             df['symbol'] = df['Symbol']
             df['strategy'] = df['Name']
-            df['price'] = df['Price']
-            df['premium'] = df['Premium']
+            df['price'] = pd.to_numeric(df['Price'], errors='coerce')
+            df['premium'] = pd.to_numeric(df['Premium'], errors='coerce')
             
             # Handle different column availability
-            df['predicted'] = df.get('Predicted', np.nan)
-            df['closed'] = df.get('Closed', np.nan)
+            df['predicted'] = pd.to_numeric(df.get('Predicted', np.nan), errors='coerce')
+            df['closed'] = pd.to_numeric(df.get('Closed', np.nan), errors='coerce')
             
             # For old format, extract from Trade description if needed
             if 'Expired' in df.columns:
@@ -102,26 +137,50 @@ class Magic8DataProcessor:
                 df['expired'] = np.nan
                 
             # Risk/Reward handling
-            df['risk'] = df.get('Risk', np.nan)
-            df['reward'] = df.get('Reward', np.nan)
-            df['ratio'] = df.get('Ratio', np.nan)
+            df['risk'] = pd.to_numeric(df.get('Risk', np.nan), errors='coerce')
+            df['reward'] = pd.to_numeric(df.get('Reward', np.nan), errors='coerce')
+            df['ratio'] = pd.to_numeric(df.get('Ratio', np.nan), errors='coerce')
             
             # Trade description
-            df['trade_description'] = df.get('Trade', '')
+            df['trade_description'] = df.get('Trade', '').astype(str)
             
             # Add source info
             df['source_file'] = os.path.basename(filepath)
             df['format_year'] = int(date_str[:4])
             
-            # Filter out any rows where critical fields are missing
-            required_fields = ['symbol', 'strategy', 'profit']
-            valid_mask = df[required_fields].notna().all(axis=1)
+            # Filter out any rows where critical fields are missing or invalid
+            required_fields = ['symbol', 'strategy', 'profit', 'timestamp']
+            
+            # Check each required field
+            valid_mask = pd.Series(True, index=df.index)
+            for field in required_fields:
+                if field == 'symbol':
+                    valid_mask &= df[field].isin(valid_symbols)
+                elif field == 'strategy':
+                    valid_mask &= df[field].notna()
+                elif field == 'profit':
+                    valid_mask &= df[field].notna() & ~np.isinf(df[field])
+                elif field == 'timestamp':
+                    valid_mask &= df[field].notna()
+            
             invalid_count = (~valid_mask).sum()
             
             if invalid_count > 0:
-                print(f"Warning: Dropping {invalid_count} rows with missing critical data from {filepath}")
+                print(f"Warning: Dropping {invalid_count} rows with missing/invalid critical data from {filepath}")
+                # Show a sample of what's being dropped for debugging
+                if invalid_count <= 5:
+                    for idx in df[~valid_mask].index[:5]:
+                        print(f"  Dropped row {idx}: symbol='{df.loc[idx, 'symbol']}', "
+                              f"strategy='{df.loc[idx, 'strategy']}', "
+                              f"profit={df.loc[idx, 'profit']}")
+                
                 df = df[valid_mask]
             
+            # Final check - if we have no valid data, return None
+            if len(df) == 0:
+                print(f"Error: No valid data remaining in {filepath}")
+                return None
+                
             return df
             
         except Exception as e:
@@ -155,12 +214,12 @@ class Magic8DataProcessor:
                 
             df['symbol'] = df['Symbol']
             df['strategy'] = df['Name']
-            df['price'] = df.get('Closing', np.nan)
-            df['premium'] = df['Premium']
-            df['predicted'] = df.get('Predicted', np.nan)
-            df['closed'] = df.get('Closing', np.nan)
-            df['risk'] = df['Risk']
-            df['trade_description'] = df['Trade']
+            df['price'] = pd.to_numeric(df.get('Closing', np.nan), errors='coerce')
+            df['premium'] = pd.to_numeric(df['Premium'], errors='coerce')
+            df['predicted'] = pd.to_numeric(df.get('Predicted', np.nan), errors='coerce')
+            df['closed'] = pd.to_numeric(df.get('Closing', np.nan), errors='coerce')
+            df['risk'] = pd.to_numeric(df['Risk'], errors='coerce')
+            df['trade_description'] = df['Trade'].astype(str)
             
             # Trades files don't have profit - mark for later calculation
             df['profit'] = np.nan
@@ -188,6 +247,8 @@ class Magic8DataProcessor:
         total_dirs = len(dirs)
         print(f"Found {total_dirs} directories to process")
         
+        processed_count = 0
+        
         for i, dir_name in enumerate(dirs):
             if i % 50 == 0:
                 print(f"Processing directory {i+1}/{total_dirs}...")
@@ -210,6 +271,7 @@ class Magic8DataProcessor:
                 df = self.process_profit_file(profit_files[0], date_str)
                 if df is not None and len(df) > 0:
                     self.all_data.append(df)
+                    processed_count += 1
             
             # Also check for trades files (newer format)
             trades_files = glob.glob(os.path.join(dir_path, 'trades*.csv'))
@@ -217,8 +279,10 @@ class Magic8DataProcessor:
                 df = self.process_trades_file(trades_files[0], date_str)
                 if df is not None and len(df) > 0:
                     self.all_data.append(df)
+                    processed_count += 1
         
         print(f"\nProcessing complete!")
+        print(f"Successfully processed {processed_count} files out of {total_dirs} directories")
         print(f"Format statistics: {self.format_stats}")
     
     def calculate_missing_profits(self, df):
@@ -310,8 +374,8 @@ class Magic8DataProcessor:
             'overall_win_rate': float(df['win'].mean()),
             'total_profit': float(df['profit'].sum()),
             'format_stats': self.format_stats,
-            'symbols_processed': list(df['symbol'].unique()),
-            'strategies_found': list(df['strategy'].unique())
+            'symbols_processed': sorted(df['symbol'].unique().tolist()),
+            'strategies_found': sorted(df['strategy'].unique().tolist())
         }
         
         stats_file = os.path.join(self.output_dir, 'processing_stats.json')
