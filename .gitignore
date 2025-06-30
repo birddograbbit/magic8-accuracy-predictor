@@ -4,79 +4,53 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-venv/
-ENV/
 env/
-.venv
+venv/
+.venv/
+ENV/
+.env
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-.DS_Store
-
-# Data
-data/raw/
-data/processed/
+# Data directories (too large for git)
+data/phase1_processed/
+data/processed_fixed/
+data/processed_optimized/
+data/processed_optimized_v2/
+data/source/
+data/ibkr/
 *.csv
+*.parquet
+
+# Model files
+models/
 *.pkl
+*.joblib
 *.h5
-
-# Data backups
-data/phase1_processed_backup_*/
-
-# Models
-checkpoints/
 *.pth
-*.pt
-
-# Model outputs
-models/*/results.json
-models/*/feature_importance.png
-
-# Logs
-logs/
-*.log
 
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
 
-# Temporary outputs
-*.png
-*.jpg
-sample_*.csv
-feature_predictiveness_results.csv
-feature_predictiveness_analysis.png
+# OS
+.DS_Store
+Thumbs.db
 
-# Environment
-.env
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
+# Test outputs
+existing_data_analysis.json
+strategy_parsing_test.json
+phase1_processed/
 
-# Keep important data directories
-!data/.gitkeep
-!data/normalized/.gitkeep
-!data/ibkr/.gitkeep
-!data/phase1_processed/.gitkeep
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*~
