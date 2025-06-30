@@ -1,0 +1,45 @@
+# Production requirements for real-time predictions
+# Install with: pip install -r requirements_production.txt
+
+# Core ML dependencies
+pandas>=1.5.0
+numpy>=1.23.0
+scikit-learn>=1.2.0
+xgboost>=1.7.0
+joblib>=1.2.0
+
+# API Framework
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+
+# IBKR Integration (optional)
+ibapi>=9.81.1
+
+# HTTP client for integrations
+requests>=2.28.0
+
+# Async support
+aiohttp>=3.8.0
+asyncio>=3.4.3
+
+# Monitoring and logging
+python-json-logger>=2.0.0
+
+# Performance
+cachetools>=5.3.0
+orjson>=3.9.0  # Fast JSON
+
+# Testing
+pytest>=7.2.0
+pytest-asyncio>=0.21.0
+httpx>=0.24.0  # For testing FastAPI
+
+# Production server
+gunicorn>=20.1.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Date/time handling
+pytz>=2023.3
