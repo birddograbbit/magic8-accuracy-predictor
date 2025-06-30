@@ -1,10 +1,15 @@
 """
-Phase 1 MVP Data Preparation Script for Magic8 Accuracy Predictor - FIXED VERSION
+Phase 1 MVP Data Preparation Script for Magic8 Accuracy Predictor
 
-This script has been fixed to work with the actual column names from the processed data:
-- Uses 'timestamp' or 'datetime' instead of 'interval_datetime'
-- Maps column names correctly (symbol instead of pred_symbol, etc.)
-- Handles missing columns gracefully
+This script focuses on readily available data:
+- Your existing normalized trading data
+- Historical price data from IBKR
+- VIX data (from IBKR or Yahoo Finance)
+- Basic technical indicators calculated from price data
+- Simple time-based features
+
+Note: IBKR data is in UTC, while trading data is likely in US Eastern Time.
+This script handles the timezone conversion appropriately.
 """
 
 import pandas as pd
@@ -38,44 +43,10 @@ class Phase1DataPreparation:
         return logging.getLogger(__name__)
         
     def load_data(self):
-        """Load the normalized aggregated data and map columns"""
+        """Load the normalized aggregated data"""
         self.logger.info("Loading normalized data...")
         self.df = pd.read_csv(self.data_path)
-        
-        # Create interval_datetime from available columns
-        if 'timestamp' in self.df.columns and self.df['timestamp'].notna().any():
-            self.df['interval_datetime'] = pd.to_datetime(self.df['timestamp'], errors='coerce')
-        elif 'datetime' in self.df.columns and self.df['datetime'].notna().any():
-            self.df['interval_datetime'] = pd.to_datetime(self.df['datetime'], errors='coerce')
-        elif 'date' in self.df.columns and 'time' in self.df.columns:
-            # Combine date and time columns
-            self.df['interval_datetime'] = pd.to_datetime(
-                self.df['date'].astype(str) + ' ' + self.df['time'].astype(str), 
-                errors='coerce'
-            )
-        else:
-            raise ValueError("No suitable datetime column found!")
-        
-        # Map column names to expected names
-        column_mapping = {
-            'symbol': 'pred_symbol',
-            'strategy': 'prof_strategy_name',
-            'premium': 'prof_premium',
-            'risk': 'prof_risk',
-            'reward': 'prof_reward',
-            'predicted': 'pred_predicted',
-            'price': 'pred_price',
-            'profit': 'prof_profit'
-        }
-        
-        # Apply column mapping
-        for old_name, new_name in column_mapping.items():
-            if old_name in self.df.columns and new_name not in self.df.columns:
-                self.df[new_name] = self.df[old_name]
-        
-        # Calculate pred_difference if we have the data
-        if 'pred_predicted' in self.df.columns and 'pred_price' in self.df.columns:
-            self.df['pred_difference'] = self.df['pred_predicted'] - self.df['pred_price']
+        self.df['interval_datetime'] = pd.to_datetime(self.df['interval_datetime'])
         
         # Check if timezone-aware
         if self.df['interval_datetime'].dt.tz is not None:
@@ -88,10 +59,6 @@ class Phase1DataPreparation:
             
         self.df = self.df.sort_values('interval_datetime')
         self.logger.info(f"Loaded {len(self.df)} records")
-        
-        # Log available columns
-        self.logger.info(f"Available columns: {', '.join(self.df.columns)}")
-        
         return self
         
     def load_ibkr_data(self, ibkr_data_path='data/ibkr'):
@@ -322,8 +289,11 @@ class Phase1DataPreparation:
         
         # Strategy encoding
         if 'prof_strategy_name' in self.df.columns:
-            # Create clean strategy type
-            self.df['strategy_type'] = self.df['prof_strategy_name']
+            # Simplified strategy mapping
+            self.df['strategy_type'] = 'Unknown'
+            self.df.loc[self.df['prof_strategy_name'].str.contains('Butterfly', na=False), 'strategy_type'] = 'Butterfly'
+            self.df.loc[self.df['prof_strategy_name'].str.contains('Condor', na=False), 'strategy_type'] = 'Iron_Condor'
+            self.df.loc[self.df['prof_strategy_name'].str.contains('Spread', na=False), 'strategy_type'] = 'Vertical'
             
             # One-hot encode
             strategy_dummies = pd.get_dummies(self.df['strategy_type'], prefix='strategy')
@@ -351,21 +321,56 @@ class Phase1DataPreparation:
         return self
         
     def create_target_variable(self):
-        """Create binary target variable from profit data"""
-        self.logger.info("Creating target variable from profit data...")
+        """Create binary target variable from profit data
         
-        # Use the 'profit' column directly since we don't have Raw profit
-        if 'prof_profit' in self.df.columns:
-            # Profit > 0 = Win (1), Profit <= 0 = Loss (0)
-            self.df['target'] = (self.df['prof_profit'] > 0).astype(int)
+        Uses Raw profit/loss as the determinant:
+        - Raw profit > 0 = Win (1)
+        - Raw profit <= 0 = Loss (0)
+        
+        Raw P/L represents the pure quality of the trade without external management.
+        """
+        self.logger.info("Creating target variable from Raw profit data...")
+        
+        # First, let's find the correct Raw profit column
+        raw_profit_col = None
+        
+        # Look for columns containing 'raw' (case insensitive)
+        for col in self.df.columns:
+            if 'raw' in col.lower() and ('profit' in col.lower() or 'p/l' in col.lower() or 'pnl' in col.lower()):
+                raw_profit_col = col
+                self.logger.info(f"Found Raw profit column: {col}")
+                break
+        
+        # If no raw profit column found, try common variations
+        if raw_profit_col is None:
+            # Try common column names
+            possible_names = ['prof_raw', 'prof_raw_profit', 'prof_raw_pnl', 'prof_raw_p/l', 
+                            'trad_raw', 'trad_raw_profit', 'Raw', 'raw', 'raw_profit', 'raw_pnl']
+            for col_name in possible_names:
+                if col_name in self.df.columns:
+                    raw_profit_col = col_name
+                    self.logger.info(f"Found Raw profit column: {col_name}")
+                    break
+        
+        # Create target based on Raw profit
+        if raw_profit_col is not None:
+            # Raw profit > 0 = Win (1), Raw profit <= 0 = Loss (0)
+            self.df['target'] = (self.df[raw_profit_col] > 0).astype(int)
             
             # Log statistics
             non_null_count = self.df['target'].notna().sum()
-            self.logger.info(f"Created target from prof_profit: {non_null_count} records")
+            self.logger.info(f"Created target from {raw_profit_col}: {non_null_count} records")
             self.logger.info(f"Target distribution: {self.df['target'].value_counts().to_dict()}")
             self.logger.info(f"Win rate: {self.df['target'].mean():.2%}")
         else:
-            raise ValueError("No profit column found for creating target variable!")
+            # Fallback to prof_profit if no raw column found
+            self.logger.warning("No Raw profit column found! Falling back to prof_profit")
+            if 'prof_profit' in self.df.columns:
+                self.df['target'] = (self.df['prof_profit'] > 0).astype(int)
+                self.logger.info(f"Created target from prof_profit: {self.df['target'].notna().sum()} records")
+                self.logger.info(f"Target distribution: {self.df['target'].value_counts().to_dict()}")
+            else:
+                raise ValueError("No suitable profit column found for creating target variable!")
         
         return self
         
@@ -397,18 +402,12 @@ class Phase1DataPreparation:
         trade_features = ['premium_normalized', 'risk_reward_ratio']
         trade_features = [f for f in trade_features if f in self.df.columns]
         
-        # Original features to keep (if they exist)
+        # Original features to keep
         original_features = [
             'pred_predicted', 'pred_price', 'pred_difference',
-            'prof_premium', 'prof_risk', 'prof_reward'
+            'prof_premium', 'prof_risk', 'prof_reward',
+            'trad_probability', 'trad_expected_move'
         ]
-        
-        # Add optional features if they exist
-        optional_features = ['trad_probability', 'trad_expected_move']
-        for feat in optional_features:
-            if feat in self.df.columns:
-                original_features.append(feat)
-        
         original_features = [f for f in original_features if f in self.df.columns]
         
         # Combine all features

@@ -54,3 +54,4 @@ logs/
 *.tmp
 *.bak
 *~
+plots/
