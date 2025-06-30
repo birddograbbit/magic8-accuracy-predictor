@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Fixed Magic8 Data Processing Pipeline
-Handles all data format changes correctly
+Handles all data format changes correctly and robustly handles timestamp parsing errors
 """
 
 import pandas as pd
@@ -20,7 +20,8 @@ class Magic8DataProcessor:
             'old_format': 0,
             'new_format': 0,
             'trades_format': 0,
-            'errors': 0
+            'errors': 0,
+            'timestamp_errors': 0
         }
         
     def process_profit_file(self, filepath, date_str):
@@ -28,9 +29,41 @@ class Magic8DataProcessor:
         try:
             df = pd.read_csv(filepath)
             
-            # Add date and timestamp
+            # Add date
             df['date'] = date_str
-            df['timestamp'] = pd.to_datetime(date_str + ' ' + df['Hour'].astype(str))
+            
+            # Handle timestamp creation more robustly
+            if 'Hour' in df.columns:
+                # Check if Hour column actually contains hour data
+                # by trying to convert the first non-null value
+                first_hour = df['Hour'].dropna().astype(str).iloc[0] if not df['Hour'].dropna().empty else None
+                
+                if first_hour and (first_hour.isdigit() or ':' in str(first_hour)):
+                    # Hour column seems valid
+                    try:
+                        df['timestamp'] = pd.to_datetime(date_str + ' ' + df['Hour'].astype(str), 
+                                                        format='%Y-%m-%d %H:%M', 
+                                                        errors='coerce')
+                    except:
+                        # If format doesn't match, try without specific format
+                        df['timestamp'] = pd.to_datetime(date_str + ' ' + df['Hour'].astype(str), 
+                                                        errors='coerce')
+                    
+                    # Count how many timestamps failed
+                    failed_timestamps = df['timestamp'].isna().sum()
+                    if failed_timestamps > 0:
+                        print(f"Warning: {failed_timestamps} timestamps failed to parse in {filepath}")
+                        self.format_stats['timestamp_errors'] += failed_timestamps
+                        
+                        # For failed timestamps, just use the date
+                        df.loc[df['timestamp'].isna(), 'timestamp'] = pd.to_datetime(date_str)
+                else:
+                    # Hour column contains non-time data (like symbols)
+                    print(f"Warning: 'Hour' column contains non-time data in {filepath}, using date only")
+                    df['timestamp'] = pd.to_datetime(date_str)
+            else:
+                # No Hour column, just use date
+                df['timestamp'] = pd.to_datetime(date_str)
             
             # Determine profit column based on available columns
             if 'Profit' in df.columns:
@@ -80,6 +113,15 @@ class Magic8DataProcessor:
             df['source_file'] = os.path.basename(filepath)
             df['format_year'] = int(date_str[:4])
             
+            # Filter out any rows where critical fields are missing
+            required_fields = ['symbol', 'strategy', 'profit']
+            valid_mask = df[required_fields].notna().all(axis=1)
+            invalid_count = (~valid_mask).sum()
+            
+            if invalid_count > 0:
+                print(f"Warning: Dropping {invalid_count} rows with missing critical data from {filepath}")
+                df = df[valid_mask]
+            
             return df
             
         except Exception as e:
@@ -95,7 +137,22 @@ class Magic8DataProcessor:
             # These files have a different structure
             # Map to our standard format
             df['date'] = date_str
-            df['timestamp'] = pd.to_datetime(df['Date'] + ' ' + df['Time'])
+            
+            # Handle timestamp creation for trades files
+            if 'Date' in df.columns and 'Time' in df.columns:
+                try:
+                    df['timestamp'] = pd.to_datetime(df['Date'] + ' ' + df['Time'], errors='coerce')
+                    
+                    # For failed timestamps, use the date_str
+                    failed_timestamps = df['timestamp'].isna().sum()
+                    if failed_timestamps > 0:
+                        print(f"Warning: {failed_timestamps} timestamps failed in trades file {filepath}")
+                        df.loc[df['timestamp'].isna(), 'timestamp'] = pd.to_datetime(date_str)
+                except:
+                    df['timestamp'] = pd.to_datetime(date_str)
+            else:
+                df['timestamp'] = pd.to_datetime(date_str)
+                
             df['symbol'] = df['Symbol']
             df['strategy'] = df['Name']
             df['price'] = df.get('Closing', np.nan)
@@ -140,18 +197,25 @@ class Magic8DataProcessor:
             # Extract date from directory name
             date_str = dir_name[:10]  # e.g., "2023-11-13"
             
+            # Validate date format
+            try:
+                datetime.strptime(date_str, '%Y-%m-%d')
+            except ValueError:
+                print(f"Warning: Invalid date format in directory name: {dir_name}")
+                continue
+            
             # Look for profit files
             profit_files = glob.glob(os.path.join(dir_path, 'profit*.csv'))
             if profit_files:
                 df = self.process_profit_file(profit_files[0], date_str)
-                if df is not None:
+                if df is not None and len(df) > 0:
                     self.all_data.append(df)
             
             # Also check for trades files (newer format)
             trades_files = glob.glob(os.path.join(dir_path, 'trades*.csv'))
             if trades_files and not profit_files:  # Only if no profit file
                 df = self.process_trades_file(trades_files[0], date_str)
-                if df is not None:
+                if df is not None and len(df) > 0:
                     self.all_data.append(df)
         
         print(f"\nProcessing complete!")
@@ -221,7 +285,7 @@ class Magic8DataProcessor:
         
         # By strategy
         print("\n=== BY STRATEGY ===")
-        for strategy in df['strategy'].unique():
+        for strategy in sorted(df['strategy'].unique()):
             strat_df = df[df['strategy'] == strategy]
             print(f"\n{strategy}:")
             print(f"  Trades: {len(strat_df):,}")
@@ -245,7 +309,9 @@ class Magic8DataProcessor:
             'date_range': f"{df['timestamp'].min()} to {df['timestamp'].max()}",
             'overall_win_rate': float(df['win'].mean()),
             'total_profit': float(df['profit'].sum()),
-            'format_stats': self.format_stats
+            'format_stats': self.format_stats,
+            'symbols_processed': list(df['symbol'].unique()),
+            'strategies_found': list(df['strategy'].unique())
         }
         
         stats_file = os.path.join(self.output_dir, 'processing_stats.json')
