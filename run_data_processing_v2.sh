@@ -1,57 +1,32 @@
 #!/bin/bash
 
-# Magic8 Data Processing Pipeline (Fixed V2)
-# This script runs the complete data processing pipeline with timestamp fixes
+# Run the v2 optimized processor with fixed CSV output
 
-echo "========================================="
-echo "Magic8 Data Processing Pipeline V2"
-echo "========================================="
+echo "Magic8 Data Processing - Version 2 (Fixed)"
+echo "=========================================="
+echo ""
+echo "This version fixes the CSV output consistency issues"
 echo ""
 
-# Set the working directory
-cd /Users/jt/magic8/magic8-accuracy-predictor
+# Create output directory
+mkdir -p data/processed_optimized_v2
 
-# Step 1: Analyze existing normalized data
-echo "Step 1: Analyzing existing normalized data..."
-echo "-----------------------------------------"
-python analyze_existing_data.py
-echo ""
+# Run the processor
+python process_magic8_data_optimized_v2.py
 
-# Step 2: Scan for timestamp issues
-echo "Step 2: Scanning for timestamp issues..."
-echo "-----------------------------------------"
-python scan_timestamp_issues.py
-echo ""
-
-# Step 3: Test strategy parsing on sample folders
-echo "Step 3: Testing strategy parsing fix on sample folders..."
-echo "-----------------------------------------"
-python test_strategy_parsing.py
-echo ""
-
-# Step 4: Run the fixed data processor V2
-echo "Step 4: Running fixed data processor V2 (with timestamp fixes)..."
-echo "-----------------------------------------"
-python process_magic8_data_fixed_v2.py
-
-# Check if processing was successful
+# Check if successful
 if [ $? -eq 0 ]; then
     echo ""
-    echo "========================================="
-    echo "Processing Complete!"
-    echo "========================================="
+    echo "✅ Processing complete!"
     echo ""
-    echo "Output files have been saved to:"
-    echo "  - data/processed_fixed_v2/magic8_trades_complete.csv"
-    echo "  - data/processed_fixed_v2/strategy_analysis.json"
-    echo "  - data/processed_fixed_v2/data_quality_report.json"
-    echo "  - data/processed_fixed_v2/symbol_analysis.json"
-    echo "  - data/processed_fixed_v2/timestamp_processing_stats.json"
+    echo "Next steps:"
+    echo "1. Verify the data:"
+    echo "   python check_optimized_data.py  # Update path to processed_optimized_v2"
     echo ""
-    echo "Check the logs above for any warnings or errors."
+    echo "2. Use the new data for Phase 1:"
+    echo "   cp data/processed_optimized_v2/magic8_trades_complete.csv data/normalized/normalized_aggregated.csv"
+    echo ""
 else
-    echo ""
-    echo "ERROR: Data processing failed!"
-    echo "Check the error messages above for details."
+    echo "❌ Processing failed!"
     exit 1
 fi
