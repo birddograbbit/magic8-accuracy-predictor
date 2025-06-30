@@ -17,6 +17,7 @@ import json
 import os
 import logging
 import pytz
+from validate_profit_coverage import validate_profit_data
 
 class Phase1DataPreparation:
     def __init__(self, data_path='data/normalized/normalized_aggregated.csv', 
@@ -354,19 +355,25 @@ class Phase1DataPreparation:
         """Create binary target variable from profit data"""
         self.logger.info("Creating target variable from profit data...")
         
-        # Use the 'profit' column directly since we don't have Raw profit
-        if 'prof_profit' in self.df.columns:
-            # Profit > 0 = Win (1), Profit <= 0 = Loss (0)
-            self.df['target'] = (self.df['prof_profit'] > 0).astype(int)
-            
-            # Log statistics
-            non_null_count = self.df['target'].notna().sum()
-            self.logger.info(f"Created target from prof_profit: {non_null_count} records")
-            self.logger.info(f"Target distribution: {self.df['target'].value_counts().to_dict()}")
-            self.logger.info(f"Win rate: {self.df['target'].mean():.2%}")
-        else:
+        profit_sources = ['prof_profit', 'raw', 'managed', 'profit_final']
+        profit_col = None
+        for col in profit_sources:
+            if col in self.df.columns and self.df[col].notna().any():
+                profit_col = col
+                break
+
+        if not profit_col:
             raise ValueError("No profit column found for creating target variable!")
-        
+
+        self.logger.info(f"Using '{profit_col}' column for target creation")
+        non_null_count = self.df[profit_col].notna().sum()
+        self.logger.info(f"Non-null profit values: {non_null_count}")
+
+        self.df['target'] = (self.df[profit_col] > 0).astype(int)
+
+        self.logger.info(f"Target distribution: {self.df['target'].value_counts().to_dict()}")
+        self.logger.info(f"Win rate: {self.df['target'].mean():.2%}")
+
         return self
         
     def select_features(self):
@@ -400,7 +407,7 @@ class Phase1DataPreparation:
         # Original features to keep (if they exist)
         original_features = [
             'pred_predicted', 'pred_price', 'pred_difference',
-            'prof_premium', 'prof_risk', 'prof_reward'
+            'prof_premium'
         ]
         
         # Add optional features if they exist
@@ -430,17 +437,34 @@ class Phase1DataPreparation:
         # Remove rows without target
         valid_data = self.df[self.df['target'].notna()].copy()
         
-        # Calculate split points
+        # Calculate temporal cut points
         n_samples = len(valid_data)
-        train_end = int(n_samples * (1 - test_size - val_size))
-        val_end = int(n_samples * (1 - test_size))
+        train_val_end = int(n_samples * (1 - test_size))
+
+        train_val = valid_data.iloc[:train_val_end]
+        test_data = valid_data.iloc[train_val_end:]
+
+        from sklearn.model_selection import train_test_split
+        train_data, val_data = train_test_split(
+            train_val,
+            test_size=val_size / (1 - test_size),
+            stratify=train_val['target'],
+            random_state=42,
+            shuffle=True,
+        )
         
-        # Split temporally
-        train_data = valid_data.iloc[:train_end]
-        val_data = valid_data.iloc[train_end:val_end]
-        test_data = valid_data.iloc[val_end:]
-        
-        self.logger.info(f"Train: {len(train_data)}, Val: {len(val_data)}, Test: {len(test_data)}")
+        self.logger.info(
+            f"Train: {len(train_data)}, Val: {len(val_data)}, Test: {len(test_data)}"
+        )
+        self.logger.info(
+            f"Class distribution - Train: {train_data['target'].value_counts().to_dict()}"
+        )
+        self.logger.info(
+            f"Class distribution - Val: {val_data['target'].value_counts().to_dict()}"
+        )
+        self.logger.info(
+            f"Class distribution - Test: {test_data['target'].value_counts().to_dict()}"
+        )
         
         # Save splits
         os.makedirs('data/phase1_processed', exist_ok=True)
@@ -496,7 +520,10 @@ class Phase1DataPreparation:
         
         # Create target
         self.create_target_variable()
-        
+
+        # Validate profit coverage and class balance
+        validate_profit_data(self.df)
+
         # Select features
         self.select_features()
         

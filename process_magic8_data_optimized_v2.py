@@ -365,6 +365,7 @@ class Magic8DataProcessorOptimized:
                     'stop': self.safe_float(row.get('Stop')),
                     'raw': self.safe_float(row.get('Raw')),
                     'managed': self.safe_float(row.get('Managed')),
+                    'profit': self.safe_float(row.get('Raw') or row.get('raw')),
                     'trade_description': self.clean_string(row.get('Trade', '')),
                     'source_file': 'profit',
                     'format_year': 2024,

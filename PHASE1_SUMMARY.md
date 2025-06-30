@@ -96,7 +96,7 @@ By Symbol:
 2. **Price-Based** (~40): close, SMA, momentum, volatility, RSI for each symbol
 3. **VIX** (7): level, SMA, change, regime indicators
 4. **Strategy** (4): One-hot encoded (now includes Sonar)
-5. **Trade** (10): premium, risk, reward, ratios
+5. **Trade** (8): premium_normalized and risk_reward_ratio (raw risk/reward columns removed)
 
 ## How to Complete Phase 1 (Updated Steps)
 

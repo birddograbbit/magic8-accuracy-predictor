@@ -38,7 +38,7 @@ This document outlines the implementation plan for building a ML system to predi
 - **Market Data**: Price, volume, volatility from IBKR
 - **VIX**: Level, change, regime classification
 - **Technical**: RSI, moving averages, momentum
-- **Trade-specific**: Strategy, premium, risk/reward
+ - **Trade-specific**: Strategy, premium_normalized, risk_reward_ratio
 
 #### Models
 - XGBoost baseline (primary)

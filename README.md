@@ -39,7 +39,7 @@ cp data/processed_optimized_v2/magic8_trades_complete.csv data/normalized/normal
 ### Step 3: Run Optimized ML Pipeline
 ```bash
 # Feature engineering - now runs in 2-5 minutes!
-python src/phase1_data_preparation.py
+python src/phase1_data_preparation.py  # includes profit validation
 
 # Train model
 python src/models/xgboost_baseline.py
@@ -82,7 +82,7 @@ python src/models/xgboost_baseline.py
 2. **Price-Based** (~40): close, SMA, momentum, volatility, RSI per symbol
 3. **VIX** (7): level, SMA, change, regime
 4. **Strategy** (4): one-hot encoded
-5. **Trade** (10): premium, risk, reward, ratios
+5. **Trade** (8): premium_normalized and risk_reward_ratio (raw risk/reward columns removed)
 
 ## 📁 Key Scripts
 
