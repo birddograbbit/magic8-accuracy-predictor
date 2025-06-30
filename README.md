@@ -5,9 +5,20 @@ This project predicts the accuracy (win/loss) of Magic8's 0DTE options trading s
 
 **Trading Symbols**: SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA  
 **Strategies**: Butterfly, Iron Condor, Vertical, Sonar  
-**Status**: Data processing complete, ML pipeline ready to run
+**Status**: Data processing pipeline fixed (June 30, 2025 evening update)
 
-## 🚀 Quick Start (Updated June 30, 2025)
+## 🚨 Important Update (June 30, 2025 - Evening)
+
+### Fixed: CSV Processing Issues
+The data processing was failing due to **summary statistics appended to the end of CSV files**. These rows don't contain trading data and were causing timestamp parsing errors.
+
+**Solution**: The updated `process_magic8_complete.py` now:
+- Removes rows with invalid dates (summary stats)
+- Handles the proper date format (`MM-DD-YYYY`)
+- Validates all data before processing
+- Provides detailed logging of what's being cleaned
+
+## 🚀 Quick Start (Updated)
 
 ### Step 1: Setup Environment
 ```bash
@@ -18,26 +29,30 @@ cd magic8-accuracy-predictor
 pip install -r requirements.txt
 ```
 
-### Step 2: Process Trade Data (✅ Complete)
+### Step 2: Process Trade Data (Use Fixed Version)
 ```bash
-# Use the optimized processor (1.5M trades in 0.6 minutes)
-python process_magic8_data_optimized_v2.py
+# Run the FIXED processor that handles summary stats
+python process_magic8_complete.py
 
-# Copy to expected location
-cp data/processed_optimized_v2/magic8_trades_complete.csv data/normalized/normalized_aggregated.csv
+# This will create:
+# - data/normalized/normalized_complete.csv
+# - data/normalized/processing_stats.json
 ```
 
-### Step 3: Download IBKR Data (Partial)
+### Step 3: Test the Fix (Optional)
 ```bash
-# Ensure IBKR TWS/Gateway is running on port 7497
-# We have SPX and VIX, need 7 more symbols
-./download_phase1_data.sh
+# Test on a single problematic file
+python test_processing_fix.py
+
+# Check for issues in your CSV files
+python check_duplicate_headers.py
+python diagnose_csv_structure.py
 ```
 
 ### Step 4: Run ML Pipeline
 ```bash
-# IMPORTANT: Use the fixed version that handles column mapping
-cp src/phase1_data_preparation_fixed.py src/phase1_data_preparation.py
+# Update pipeline to use new data file
+sed -i '' 's/normalized_aggregated.csv/normalized_complete.csv/g' src/phase1_data_preparation.py
 
 # Process features
 python src/phase1_data_preparation.py
@@ -46,20 +61,35 @@ python src/phase1_data_preparation.py
 python src/models/xgboost_baseline.py
 ```
 
-## 📊 Current Data Statistics
+## 📊 Data Quality Issues Fixed
 
-### Trade Data (✅ Processed)
-- **Total Trades**: 1,527,804
-- **Strategies**: 
-  - Butterfly: 26.62%
-  - Iron Condor: 26.62%
-  - Vertical: 26.62%
-  - Sonar: 20.15%
-- **Processing Time**: 0.6 minutes
+### Problem: Summary Statistics in CSV Files
+Many CSV files have summary rows appended at the end:
+```
+# Normal trading data:
+01-24-2023,09:35,SPX,4000.48,Butterfly,...
 
-### IBKR Data Status
-- ✅ Downloaded: SPX, VIX
-- ❌ Need: SPY, RUT, NDX, QQQ, XSP, AAPL, TSLA
+# Summary stats at end (causing errors):
+Butterfly,100
+Butterfly Expired,50
+Butterfly Failed,50
+Butterfly Accuracy,50%
+...
+```
+
+### Solution Applied
+- Validates date format (`MM-DD-YYYY`) for each row
+- Removes any row without a valid date
+- Provides detailed logging of cleaning process
+- Preserves all valid trading data
+
+## 📈 Expected Results
+
+After running the fixed pipeline:
+- **Total trades**: ~1.5M (varies based on cleaning)
+- **Realistic win rates**: 50-70% range
+- **Accurate profit tracking**: Uses correct profit columns
+- **All strategies included**: Butterfly, Iron Condor, Vertical, Sonar
 
 ## 🎯 Phase 1 Goals & Features
 
@@ -75,92 +105,49 @@ python src/models/xgboost_baseline.py
 4. **Strategy** (4): one-hot encoded
 5. **Trade** (10): premium, risk, reward, ratios
 
-## 📁 Project Structure (Cleaned)
+## 📁 Key Scripts
 
-```
-magic8-accuracy-predictor/
-├── data/
-│   ├── source/                    # Original CSV files
-│   ├── processed_optimized_v2/    # Processed trade data
-│   ├── normalized/                # Expected ML input location
-│   ├── ibkr/                     # Market data
-│   └── phase1_processed/         # ML features (created by pipeline)
-├── src/
-│   ├── phase1_data_preparation_fixed.py  # Use this version!
-│   └── models/
-│       └── xgboost_baseline.py
-├── process_magic8_data_optimized_v2.py   # Data processor
-├── run_data_processing_v2.sh             # Alternative runner
-└── download_phase1_data.sh               # IBKR helper
-```
+### Data Processing
+- `process_magic8_complete.py` - Main processor (use this!)
+- `test_processing_fix.py` - Test the fix
+- `diagnose_csv_structure.py` - Diagnose CSV issues
+- `check_duplicate_headers.py` - Find problematic rows
 
-## ⚠️ Important Notes
+### ML Pipeline
+- `src/phase1_data_preparation.py` - Feature engineering
+- `src/models/xgboost_baseline.py` - Model training
 
-### Use Correct Versions
-- **Data Processor**: `process_magic8_data_optimized_v2.py` (NOT older versions)
-- **ML Pipeline**: `phase1_data_preparation_fixed.py` (handles column mapping)
-- **Data Location**: Always copy to `data/normalized/normalized_aggregated.csv`
+## ⚠️ Common Issues & Solutions
 
-### Common Issues Fixed
-1. **Column Mismatch**: Fixed script maps 'timestamp' → 'interval_datetime'
-2. **Missing Sonar**: Now parsing strategy from correct column
-3. **Memory Issues**: Batch processing prevents crashes
+### "time data 'YYYY-MM-DD NDX' doesn't match format"
+**Cause**: Summary statistics at end of CSV files  
+**Solution**: Use `process_magic8_complete.py` which removes these rows
 
-## 📈 Implementation Status
+### Many rows being dropped
+**Cause**: Invalid data in summary sections  
+**Solution**: This is expected - only valid trading rows are kept
 
-### ✅ Phase 1: MVP (75% Complete)
-- ✅ Data processing pipeline
-- ✅ All 4 strategies identified
-- ✅ Column mapping fixed
-- ⏳ ML model training (ready to run)
-- ⏳ Feature importance analysis
-
-### 📅 Phase 2: Enhancements (After Phase 1)
-- Cross-asset correlations
-- Market microstructure
-- Advanced models (ensemble, neural nets)
-
-### 📅 Phase 3: Production
-- Real-time predictions
-- API deployment
-- Performance monitoring
-
-## 🔧 Troubleshooting
-
-### If phase1_data_preparation.py fails:
-```bash
-# You're using the wrong version! Use:
-cp src/phase1_data_preparation_fixed.py src/phase1_data_preparation.py
-```
-
-### If data processing is slow:
-```bash
-# You're using old processor! Use:
-python process_magic8_data_optimized_v2.py
-```
-
-### If strategies are missing:
-```bash
-# Check you're using v2 processor which parses 'Name' column correctly
-```
+### Missing strategies
+**Cause**: Using old data processor  
+**Solution**: Use the complete processor which handles all formats
 
 ## 📊 Next Steps
 
-1. **Complete IBKR downloads** for remaining 7 symbols
-2. **Run ML pipeline** with fixed scripts
-3. **Analyze results** - feature importance, performance by strategy
-4. **Clean up** old files per CLEANUP_PLAN.md
-5. **Plan Phase 2** based on Phase 1 learnings
+1. **Run fixed processor** on all data
+2. **Download IBKR data** for remaining symbols
+3. **Train ML model** with clean data
+4. **Analyze results** by strategy and time period
+5. **Optimize** underperforming strategies
 
 ## 📚 Documentation
 
 - `PROJECT_KNOWLEDGE_BASE.md` - Comprehensive project details
-- `CLEANUP_PLAN.md` - File cleanup instructions
-- `PHASE1_SUMMARY.md` - Phase 1 progress and plans
-- `PROJECT_SUMMARY_NEXT_CHAT.md` - Quick status for continuity
+- `PHASE1_PLAN.md` - Detailed implementation plan
+- `PHASE1_SUMMARY.md` - Phase 1 progress
+- `IMPLEMENTATION_PLAN.md` - Full project roadmap
 
 ---
 
 **Repository**: https://github.com/birddograbbit/magic8-accuracy-predictor  
-**Last Updated**: June 30, 2025  
-**Contact**: Check repository for issues/discussions
+**Last Updated**: June 30, 2025 (Evening - Fixed CSV processing)  
+**Key Fix**: Handles summary statistics in CSV files correctly
