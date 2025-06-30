@@ -1,14 +1,15 @@
 # Magic8 Accuracy Predictor
 
 ## Project Overview
-This project predicts the accuracy (win/loss) of Magic8's 0DTE options trading system. We use a phased approach, starting with a simple MVP using readily available data and gradually adding complexity.
+This project predicts the accuracy (win/loss) of Magic8's 0DTE options trading systems. We use a phased approach, starting with a simple MVP using readily available data.
 
 **Trading Symbols**: SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA  
-**Strategies**: Butterfly (debit), Iron Condor (credit), Vertical Spreads (credit)
+**Strategies**: Butterfly, Iron Condor, Vertical, Sonar  
+**Status**: Data processing complete, ML pipeline ready to run
 
-## 🚀 Phase 1 Quick Start (MVP - Ship Fast!)
+## 🚀 Quick Start (Updated June 30, 2025)
 
-### Step 1: Clone and Setup
+### Step 1: Setup Environment
 ```bash
 git clone https://github.com/birddograbbit/magic8-accuracy-predictor.git
 cd magic8-accuracy-predictor
@@ -17,186 +18,149 @@ cd magic8-accuracy-predictor
 pip install -r requirements.txt
 ```
 
-### Step 2: Download IBKR Data
-First, ensure your IBKR TWS/Gateway is running, then:
-
+### Step 2: Process Trade Data (✅ Complete)
 ```bash
-# Copy your IBKR download script to this directory
-cp /path/to/your/ibkr_downloader.py .
+# Use the optimized processor (1.5M trades in 0.6 minutes)
+python process_magic8_data_optimized_v2.py
 
-# Make the download script executable
-chmod +x download_phase1_data.sh
-
-# Download all required symbols (uses port 7497 by default)
-./download_phase1_data.sh
-
-# Or specify a different port
-./download_phase1_data.sh 7496
+# Copy to expected location
+cp data/processed_optimized_v2/magic8_trades_complete.csv data/normalized/normalized_aggregated.csv
 ```
 
-### Step 3: Run Phase 1 Pipeline
+### Step 3: Download IBKR Data (Partial)
 ```bash
-# Process data and create features
+# Ensure IBKR TWS/Gateway is running on port 7497
+# We have SPX and VIX, need 7 more symbols
+./download_phase1_data.sh
+```
+
+### Step 4: Run ML Pipeline
+```bash
+# IMPORTANT: Use the fixed version that handles column mapping
+cp src/phase1_data_preparation_fixed.py src/phase1_data_preparation.py
+
+# Process features
 python src/phase1_data_preparation.py
 
-# Train XGBoost baseline model
+# Train model
 python src/models/xgboost_baseline.py
 ```
 
-## 📊 Phase 1 Features (MVP)
+## 📊 Current Data Statistics
 
-Using only readily available data:
+### Trade Data (✅ Processed)
+- **Total Trades**: 1,527,804
+- **Strategies**: 
+  - Butterfly: 26.62%
+  - Iron Condor: 26.62%
+  - Vertical: 26.62%
+  - Sonar: 20.15%
+- **Processing Time**: 0.6 minutes
 
-### From Your Trade Data
-- Trade outcomes (profit/loss)
-- Strategy types
-- Premium, risk, reward values
-- Trade probabilities
+### IBKR Data Status
+- ✅ Downloaded: SPX, VIX
+- ❌ Need: SPY, RUT, NDX, QQQ, XSP, AAPL, TSLA
 
-### From IBKR Historical Data
-- 5-minute price bars for all symbols
-- VIX levels
-- Calculated technical indicators:
-  - RSI, Moving Averages
-  - Price momentum
-  - Volatility measures
+## 🎯 Phase 1 Goals & Features
 
-### Engineered Features
-- Time-based features (hour, minute, time to close)
-- Market regime (based on VIX levels)
-- Strategy encoding
-- Price position indicators
+### Target Metrics
+- **Accuracy**: > 60% (baseline 50%)
+- **Features**: ~70 engineered features
+- **Training Time**: < 5 minutes
 
-**Total: ~60-70 features**
+### Feature Categories
+1. **Temporal** (9): hour, minute, day_of_week, market indicators
+2. **Price-Based** (~40): close, SMA, momentum, volatility, RSI per symbol
+3. **VIX** (7): level, SMA, change, regime
+4. **Strategy** (4): one-hot encoded
+5. **Trade** (10): premium, risk, reward, ratios
 
-## 🎯 Phase 1 Goals
-
-- **Accuracy**: > 60% (baseline is 50%)
-- **Timeline**: 2 weeks to working model
-- **Complexity**: Simple XGBoost + feature engineering
-- **Focus**: Get a working system quickly, iterate from there
-
-## 📁 Project Structure
+## 📁 Project Structure (Cleaned)
 
 ```
 magic8-accuracy-predictor/
 ├── data/
-│   ├── normalized/           # Your existing trade data
-│   ├── ibkr/                # Downloaded IBKR price data
-│   └── phase1_processed/    # Processed features
+│   ├── source/                    # Original CSV files
+│   ├── processed_optimized_v2/    # Processed trade data
+│   ├── normalized/                # Expected ML input location
+│   ├── ibkr/                     # Market data
+│   └── phase1_processed/         # ML features (created by pipeline)
 ├── src/
-│   ├── phase1_data_preparation.py  # Simple data pipeline
-│   ├── data_preparation.py         # (Future: comprehensive features)
+│   ├── phase1_data_preparation_fixed.py  # Use this version!
 │   └── models/
-│       └── xgboost_baseline.py     # Phase 1 model
-├── download_phase1_data.sh   # IBKR data download helper
-├── PHASE1_PLAN.md           # Detailed Phase 1 plan
-└── requirements.txt
+│       └── xgboost_baseline.py
+├── process_magic8_data_optimized_v2.py   # Data processor
+├── run_data_processing_v2.sh             # Alternative runner
+└── download_phase1_data.sh               # IBKR helper
 ```
 
-## 📈 Implementation Phases
+## ⚠️ Important Notes
 
-### ✅ Phase 1: MVP (Current)
-- Use existing trade data + IBKR price data
-- Simple features (price, time, VIX)
-- XGBoost baseline model
-- 2-week implementation
+### Use Correct Versions
+- **Data Processor**: `process_magic8_data_optimized_v2.py` (NOT older versions)
+- **ML Pipeline**: `phase1_data_preparation_fixed.py` (handles column mapping)
+- **Data Location**: Always copy to `data/normalized/normalized_aggregated.csv`
 
-### 📅 Phase 2: Enhanced Features
-- Add cross-asset correlations
-- Market microstructure features
-- Advanced technical indicators
-- Transformer models
+### Common Issues Fixed
+1. **Column Mismatch**: Fixed script maps 'timestamp' → 'interval_datetime'
+2. **Missing Sonar**: Now parsing strategy from correct column
+3. **Memory Issues**: Batch processing prevents crashes
 
-### 📅 Phase 3: Production System
+## 📈 Implementation Status
+
+### ✅ Phase 1: MVP (75% Complete)
+- ✅ Data processing pipeline
+- ✅ All 4 strategies identified
+- ✅ Column mapping fixed
+- ⏳ ML model training (ready to run)
+- ⏳ Feature importance analysis
+
+### 📅 Phase 2: Enhancements (After Phase 1)
+- Cross-asset correlations
+- Market microstructure
+- Advanced models (ensemble, neural nets)
+
+### 📅 Phase 3: Production
 - Real-time predictions
 - API deployment
 - Performance monitoring
-- Strategy-specific models
 
-## 🔧 Data Requirements
+## 🔧 Troubleshooting
 
-### What You Need
-1. Your normalized trade data (already have)
-2. IBKR account with market data subscription
-3. Python 3.8+
+### If phase1_data_preparation.py fails:
+```bash
+# You're using the wrong version! Use:
+cp src/phase1_data_preparation_fixed.py src/phase1_data_preparation.py
+```
 
-### What We Use (Phase 1)
-- Historical price data from IBKR
-- VIX data (INDEX:VIX)
-- No exotic data sources
-- No historical options data needed
+### If data processing is slow:
+```bash
+# You're using old processor! Use:
+python process_magic8_data_optimized_v2.py
+```
 
-## 📊 Expected Results
+### If strategies are missing:
+```bash
+# Check you're using v2 processor which parses 'Name' column correctly
+```
 
-### Phase 1 Targets
-- Overall accuracy: > 60%
-- Per-strategy accuracy: > 58%
-- Feature calculation: < 1 second
-- Model training: < 5 minutes
+## 📊 Next Steps
 
-### Key Metrics
-- Accuracy, Precision, Recall
-- F1 Score, AUC-ROC
-- Performance by strategy
-- Performance by market regime
+1. **Complete IBKR downloads** for remaining 7 symbols
+2. **Run ML pipeline** with fixed scripts
+3. **Analyze results** - feature importance, performance by strategy
+4. **Clean up** old files per CLEANUP_PLAN.md
+5. **Plan Phase 2** based on Phase 1 learnings
 
-## 🚦 Next Steps After Phase 1
+## 📚 Documentation
 
-1. **Analyze Results**
-   - Which features are most important?
-   - Which strategies are easiest to predict?
-   - When does the model fail?
-
-2. **Iterate Quickly**
-   - Add features that show promise
-   - Remove features that don't help
-   - Try different model architectures
-
-3. **Plan Phase 2**
-   - Based on Phase 1 learnings
-   - Add complexity only where it helps
-   - Keep focus on practical improvements
-
-## 💡 Key Principles
-
-1. **Start Simple**: Phase 1 uses only readily available data
-2. **Ship Fast**: Get a working model in 2 weeks
-3. **Iterate**: Learn what works before adding complexity
-4. **Be Practical**: Use data you can actually get
-5. **Measure Everything**: Track what improves predictions
-
-## 🐛 Troubleshooting
-
-### IBKR Data Download Issues
-- Ensure TWS/Gateway is running
-- Check your market data subscriptions
-- Try reducing the duration (e.g., "1 Y" instead of "3 Y")
-- Check logs in `logs/` directory
-
-### Feature Calculation Issues
-- Check for missing IBKR data files
-- Ensure all symbols have been downloaded
-- Look for NaN values in processed data
-
-## 📚 References
-
-- **Your IBKR Script**: For downloading historical data
-- **XGBoost**: Fast and effective for tabular data
-- **yfinance**: Backup for VIX data if needed
-
-## 🤝 Contributing
-
-Focus on Phase 1 improvements:
-1. Better feature engineering
-2. Model hyperparameter tuning
-3. Error analysis and debugging
-4. Documentation improvements
-
-## 📧 Contact
-
-For questions or contributions, please open an issue on GitHub.
+- `PROJECT_KNOWLEDGE_BASE.md` - Comprehensive project details
+- `CLEANUP_PLAN.md` - File cleanup instructions
+- `PHASE1_SUMMARY.md` - Phase 1 progress and plans
+- `PROJECT_SUMMARY_NEXT_CHAT.md` - Quick status for continuity
 
 ---
 
-**Remember**: The goal of Phase 1 is to get a working system quickly with available data. We'll add complexity in future phases only where it demonstrably improves predictions.
+**Repository**: https://github.com/birddograbbit/magic8-accuracy-predictor  
+**Last Updated**: June 30, 2025  
+**Contact**: Check repository for issues/discussions
