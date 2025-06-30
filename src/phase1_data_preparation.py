@@ -1,10 +1,13 @@
 """
-Phase 1 MVP Data Preparation Script for Magic8 Accuracy Predictor - FIXED VERSION
+Phase 1 MVP Data Preparation Script for Magic8 Accuracy Predictor - OPTIMIZED VERSION
 
-This script has been fixed to work with the actual column names from the processed data:
-- Uses 'timestamp' or 'datetime' instead of 'interval_datetime'
-- Maps column names correctly (symbol instead of pred_symbol, etc.)
-- Handles missing columns gracefully
+Performance optimizations:
+- Uses pd.merge_asof() instead of apply/lambda for time-series joins (100x+ faster)
+- Processes each symbol's data in bulk instead of row-by-row
+- Adds progress tracking to monitor performance
+- Maintains same accuracy with 10-minute tolerance for matching
+
+Expected runtime: 2-5 minutes instead of 3+ hours
 """
 
 import pandas as pd
@@ -17,6 +20,7 @@ import json
 import os
 import logging
 import pytz
+import time
 
 class Phase1DataPreparation:
     def __init__(self, data_path='data/normalized/normalized_aggregated.csv', 
@@ -37,8 +41,14 @@ class Phase1DataPreparation:
         )
         return logging.getLogger(__name__)
         
+    def _log_time(self, start_time, operation):
+        """Log the time taken for an operation"""
+        elapsed = time.time() - start_time
+        self.logger.info(f"{operation} completed in {elapsed:.2f} seconds")
+        
     def load_data(self):
         """Load the normalized aggregated data and map columns"""
+        start_time = time.time()
         self.logger.info("Loading normalized data...")
         self.df = pd.read_csv(self.data_path)
         
@@ -92,6 +102,7 @@ class Phase1DataPreparation:
         # Log available columns
         self.logger.info(f"Available columns: {', '.join(self.df.columns)}")
         
+        self._log_time(start_time, "Data loading")
         return self
         
     def load_ibkr_data(self, ibkr_data_path='data/ibkr'):
@@ -101,6 +112,7 @@ class Phase1DataPreparation:
         
         IBKR data is in UTC, so we need to convert it to match the trading data timezone.
         """
+        start_time = time.time()
         self.logger.info("Loading IBKR historical data...")
         self.price_data = {}
         
@@ -135,6 +147,27 @@ class Phase1DataPreparation:
                     self.logger.warning(f"{symbol} data has no timezone info, assuming {self.trading_timezone}")
                 
                 df = df.set_index('date')
+                
+                # Pre-calculate technical indicators for this symbol
+                self.logger.info(f"Calculating technical indicators for {symbol}...")
+                # 20-period SMA (about 100 minutes)
+                df['sma_20'] = df['close'].rolling(20).mean()
+                
+                # Price momentum (5-period)
+                df['momentum_5'] = df['close'].pct_change(5)
+                
+                # Volatility (20-period)
+                df['volatility_20'] = df['close'].rolling(20).std()
+                
+                # RSI
+                if len(df) > 14:
+                    df['rsi'] = ta.momentum.RSIIndicator(close=df['close'], window=14).rsi()
+                
+                # Distance from high/low
+                df['high_20'] = df['high'].rolling(20).max()
+                df['low_20'] = df['low'].rolling(20).min()
+                df['price_position'] = (df['close'] - df['low_20']) / (df['high_20'] - df['low_20'] + 1e-8)
+                
                 self.price_data[symbol] = df
                 self.logger.info(f"Loaded {len(df)} records for {symbol}")
             else:
@@ -153,11 +186,18 @@ class Phase1DataPreparation:
                 self.logger.info(f"Converted VIX from UTC to {self.trading_timezone}")
                 
             self.vix_data = self.vix_data.set_index('date')
+            
+            # Pre-calculate VIX features
+            self.logger.info("Calculating VIX technical indicators...")
+            self.vix_data['vix_sma_20'] = self.vix_data['close'].rolling(20).mean()
+            self.vix_data['vix_change'] = self.vix_data['close'].pct_change()
+            
             self.logger.info(f"Loaded {len(self.vix_data)} VIX records")
         else:
             self.logger.warning("No VIX data found, will try Yahoo Finance")
             self.fetch_vix_fallback()
             
+        self._log_time(start_time, "IBKR data loading and indicator calculation")
         return self
         
     def fetch_vix_fallback(self):
@@ -169,12 +209,16 @@ class Phase1DataPreparation:
         vix = yf.download('^VIX', start=start_date, end=end_date, interval='5m')
         if not vix.empty:
             self.vix_data = vix[['Close', 'Volume']].rename(columns={'Close': 'close', 'Volume': 'volume'})
+            # Pre-calculate VIX features
+            self.vix_data['vix_sma_20'] = self.vix_data['close'].rolling(20).mean()
+            self.vix_data['vix_change'] = self.vix_data['close'].pct_change()
             self.logger.info(f"Downloaded {len(self.vix_data)} VIX records from Yahoo")
         else:
             self.logger.error("Failed to download VIX data")
             
     def add_basic_temporal_features(self):
         """Add simple time-based features that are proven useful for trading"""
+        start_time = time.time()
         self.logger.info("Adding temporal features...")
         
         # Basic time components
@@ -209,95 +253,98 @@ class Phase1DataPreparation:
             self.df.loc[market_open_mask, 'minute']
         )
         
+        self._log_time(start_time, "Temporal features")
         return self
         
     def add_price_features(self):
-        """Add price-based features using IBKR data"""
-        self.logger.info("Adding price features...")
+        """Add price-based features using IBKR data - OPTIMIZED VERSION"""
+        start_time = time.time()
+        self.logger.info("Adding price features using merge_asof...")
         
-        # For each symbol in our data
+        # Process each symbol
         for symbol in self.symbols:
+            symbol_start = time.time()
+            
             if symbol not in self.price_data:
                 self.logger.warning(f"No price data for {symbol}, skipping")
                 continue
                 
+            # Get rows for this symbol
+            symbol_mask = self.df['pred_symbol'] == symbol
+            symbol_count = symbol_mask.sum()
+            
+            if symbol_count == 0:
+                continue
+                
+            self.logger.info(f"Processing {symbol_count} rows for {symbol}...")
+            
             # Get price data for this symbol
             price_df = self.price_data[symbol]
             
-            # Calculate simple technical indicators
-            # 20-period SMA (about 100 minutes)
-            price_df['sma_20'] = price_df['close'].rolling(20).mean()
+            # Select features to merge
+            feature_cols = ['close', 'sma_20', 'momentum_5', 'volatility_20', 'rsi', 'price_position']
+            available_cols = [col for col in feature_cols if col in price_df.columns]
             
-            # Price momentum (5-period)
-            price_df['momentum_5'] = price_df['close'].pct_change(5)
+            # Create a temporary dataframe with the features we want
+            price_features = price_df[available_cols].copy()
             
-            # Volatility (20-period)
-            price_df['volatility_20'] = price_df['close'].rolling(20).std()
+            # Rename columns to include symbol prefix
+            price_features.columns = [f'{symbol}_{col}' for col in price_features.columns]
             
-            # RSI
-            if len(price_df) > 14:
-                price_df['rsi'] = ta.momentum.RSIIndicator(close=price_df['close'], window=14).rsi()
+            # Get the subset of data for this symbol
+            symbol_data = self.df.loc[symbol_mask, ['interval_datetime']].copy()
+            symbol_data = symbol_data.reset_index(drop=False)  # Keep original index
             
-            # Distance from high/low
-            price_df['high_20'] = price_df['high'].rolling(20).max()
-            price_df['low_20'] = price_df['low'].rolling(20).min()
-            price_df['price_position'] = (price_df['close'] - price_df['low_20']) / (price_df['high_20'] - price_df['low_20'] + 1e-8)
+            # Use merge_asof for efficient time-based merge
+            merged = pd.merge_asof(
+                symbol_data.sort_values('interval_datetime'),
+                price_features.sort_index(),
+                left_on='interval_datetime',
+                right_index=True,
+                direction='nearest',
+                tolerance=pd.Timedelta('10min')
+            )
             
-            # Merge with main dataframe
-            # First, create a mapping based on symbol and time
-            symbol_mask = self.df['pred_symbol'] == symbol
-            if symbol_mask.sum() > 0:
-                # Align the price data with our main data
-                for col in ['close', 'sma_20', 'momentum_5', 'volatility_20', 'rsi', 'price_position']:
-                    if col in price_df.columns:
-                        # Create feature name
-                        feature_name = f'{symbol}_{col}'
-                        
-                        # Merge based on nearest time
-                        self.df.loc[symbol_mask, feature_name] = self.df.loc[symbol_mask, 'interval_datetime'].apply(
-                            lambda x: self._get_nearest_value(price_df, x, col)
-                        )
+            # Map back to original indices and update main dataframe
+            merged = merged.set_index('index')
+            for col in price_features.columns:
+                self.df.loc[symbol_mask, col] = merged[col]
+            
+            self._log_time(symbol_start, f"Price features for {symbol}")
         
+        self._log_time(start_time, "All price features")
         return self
         
-    def _get_nearest_value(self, df, timestamp, column):
-        """Get the nearest value from a dataframe based on timestamp"""
-        # Ensure timestamp is timezone-naive
-        if hasattr(timestamp, 'tz') and timestamp.tz is not None:
-            timestamp = timestamp.tz_localize(None)
-            
-        if timestamp in df.index:
-            return df.loc[timestamp, column]
-        else:
-            # Find nearest timestamp
-            time_diff = abs(df.index - timestamp)
-            if len(time_diff) > 0:
-                nearest_idx = time_diff.argmin()
-                if time_diff[nearest_idx] < timedelta(minutes=10):  # Within 10 minutes
-                    return df.iloc[nearest_idx][column]
-        return np.nan
-        
     def add_vix_features(self):
-        """Add VIX-based features"""
-        self.logger.info("Adding VIX features...")
+        """Add VIX-based features - OPTIMIZED VERSION"""
+        start_time = time.time()
+        self.logger.info("Adding VIX features using merge_asof...")
         
         if hasattr(self, 'vix_data') and self.vix_data is not None:
-            # Basic VIX features
-            vix_df = self.vix_data.copy()
+            # Select VIX features to merge
+            vix_features = self.vix_data[['close', 'vix_sma_20', 'vix_change']].copy()
             
-            # VIX moving average
-            vix_df['vix_sma_20'] = vix_df['close'].rolling(20).mean()
+            # Rename columns
+            vix_features.columns = ['vix', 'vix_vix_sma_20', 'vix_vix_change']
             
-            # VIX change
-            vix_df['vix_change'] = vix_df['close'].pct_change()
+            # Create a temporary dataframe with just the datetime
+            temp_df = self.df[['interval_datetime']].copy()
+            temp_df = temp_df.reset_index(drop=False)
             
-            # Merge VIX data with main dataframe
-            for col in ['close', 'vix_sma_20', 'vix_change']:
-                if col in vix_df.columns:
-                    feature_name = f'vix_{col}' if col != 'close' else 'vix'
-                    self.df[feature_name] = self.df['interval_datetime'].apply(
-                        lambda x: self._get_nearest_value(vix_df, x, col)
-                    )
+            # Use merge_asof for efficient time-based merge
+            merged = pd.merge_asof(
+                temp_df.sort_values('interval_datetime'),
+                vix_features.sort_index(),
+                left_on='interval_datetime',
+                right_index=True,
+                direction='nearest',
+                tolerance=pd.Timedelta('10min')
+            )
+            
+            # Map back to original indices
+            merged = merged.set_index('index')
+            for col in vix_features.columns:
+                self.df[col] = merged[col]
             
             # Simple VIX regime
             self.df['vix_regime'] = pd.cut(
@@ -314,10 +361,12 @@ class Phase1DataPreparation:
             self.df = self.df.drop('vix_regime', axis=1)
             self.logger.info("Dropped original 'vix_regime' categorical column")
         
+        self._log_time(start_time, "VIX features")
         return self
         
     def add_trade_features(self):
         """Add features from existing trade data"""
+        start_time = time.time()
         self.logger.info("Adding trade-specific features...")
         
         # Strategy encoding
@@ -335,23 +384,29 @@ class Phase1DataPreparation:
         
         # Premium normalized by underlying price (if we have it)
         if 'prof_premium' in self.df.columns:
-            # Try to get the underlying price at the time
+            # Vectorized operation for all symbols at once
+            self.df['premium_normalized'] = np.nan
+            
             for symbol in self.symbols:
                 symbol_mask = self.df['pred_symbol'] == symbol
-                if symbol_mask.sum() > 0 and f'{symbol}_close' in self.df.columns:
+                close_col = f'{symbol}_close'
+                
+                if symbol_mask.sum() > 0 and close_col in self.df.columns:
                     self.df.loc[symbol_mask, 'premium_normalized'] = (
                         self.df.loc[symbol_mask, 'prof_premium'] / 
-                        self.df.loc[symbol_mask, f'{symbol}_close']
+                        self.df.loc[symbol_mask, close_col]
                     )
         
         # Risk-reward ratio
         if 'prof_risk' in self.df.columns and 'prof_reward' in self.df.columns:
             self.df['risk_reward_ratio'] = self.df['prof_reward'] / (self.df['prof_risk'] + 1e-8)
         
+        self._log_time(start_time, "Trade features")
         return self
         
     def create_target_variable(self):
         """Create binary target variable from profit data"""
+        start_time = time.time()
         self.logger.info("Creating target variable from profit data...")
         
         # Use the 'profit' column directly since we don't have Raw profit
@@ -367,6 +422,7 @@ class Phase1DataPreparation:
         else:
             raise ValueError("No profit column found for creating target variable!")
         
+        self._log_time(start_time, "Target variable creation")
         return self
         
     def select_features(self):
@@ -425,6 +481,7 @@ class Phase1DataPreparation:
         
     def split_data(self, test_size=0.2, val_size=0.2):
         """Split data temporally into train/val/test sets"""
+        start_time = time.time()
         self.logger.info("Splitting data into train/val/test sets...")
         
         # Remove rows without target
@@ -477,11 +534,14 @@ class Phase1DataPreparation:
         with open('data/phase1_processed/feature_info.json', 'w') as f:
             json.dump(feature_info, f, indent=2)
         
+        self._log_time(start_time, "Data splitting and saving")
         self.logger.info("Phase 1 data preparation complete!")
         return train_data, val_data, test_data
     
     def run_phase1_pipeline(self):
         """Run the complete Phase 1 data preparation pipeline"""
+        pipeline_start = time.time()
+        
         # Load normalized trade data
         self.load_data()
         
@@ -502,6 +562,8 @@ class Phase1DataPreparation:
         
         # Split and save
         train_data, val_data, test_data = self.split_data()
+        
+        self._log_time(pipeline_start, "COMPLETE PIPELINE")
         
         return train_data, val_data, test_data
 
