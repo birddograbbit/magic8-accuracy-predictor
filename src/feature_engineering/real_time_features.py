@@ -11,6 +11,7 @@ This module generates the same features used in training:
 import asyncio
 import logging
 import math
+import json
 from datetime import datetime, time
 from typing import Dict, List, Optional, Tuple
 
@@ -32,7 +33,8 @@ class RealTimeFeatureGenerator:
     def __init__(
         self,
         data_provider: BaseDataProvider,
-        config: Optional[Dict] = None
+        config: Optional[Dict] = None,
+        feature_info_path: str = "data/phase1_processed/feature_info.json",
     ):
         """
         Initialize the feature generator.
@@ -43,12 +45,15 @@ class RealTimeFeatureGenerator:
         """
         self.data_provider = data_provider
         self.config = config or self._default_config()
-        
+
         # Feature configuration
         self.temporal_config = self.config.get('temporal', {})
         self.price_config = self.config.get('price', {})
         self.vix_config = self.config.get('vix', {})
-        
+
+        # Load feature order
+        self.feature_order = self._load_feature_order(feature_info_path)
+
         logger.info("RealTimeFeatureGenerator initialized")
 
     def _default_config(self) -> Dict:
@@ -70,6 +75,40 @@ class RealTimeFeatureGenerator:
                 'regime_thresholds': [15, 20, 25]
             }
         }
+
+    def _load_feature_order(self, path: str) -> List[str]:
+        """Load feature order from a JSON file."""
+        try:
+            with open(path, 'r') as f:
+                info = json.load(f)
+            order = info.get('feature_names', [])
+            if order:
+                logger.info("Loaded %d features from %s", len(order), path)
+                return order
+        except Exception as e:
+            logger.warning("Failed to load feature info from %s: %s", path, e)
+
+        logger.warning("Using default feature order")
+        return self._default_feature_order()
+
+    def _default_feature_order(self) -> List[str]:
+        """Fallback feature order used if no file is available."""
+        return [
+            'hour', 'minute', 'day_of_week',
+            'hour_sin', 'hour_cos',
+            'is_market_open', 'is_open_30min', 'is_close_30min', 'minutes_to_close',
+
+            'SPX_close', 'SPX_sma_20', 'SPX_momentum_5',
+            'SPX_volatility_20', 'SPX_rsi', 'SPX_price_position',
+
+            'vix', 'vix_vix_sma_20', 'vix_vix_change',
+            'vix_regime_low', 'vix_regime_normal', 'vix_regime_elevated', 'vix_regime_high',
+
+            'strategy_Butterfly', 'strategy_Iron Condor', 'strategy_Vertical', 'strategy_Sonar',
+            'premium_normalized', 'risk_reward_ratio',
+            'pred_predicted', 'pred_price', 'pred_difference', 'prof_premium',
+            'strike_distance_pct', 'is_0dte'
+        ]
 
     async def _ensure_connected(self):
         """Ensure the data provider is connected before fetching data."""
@@ -398,27 +437,7 @@ class RealTimeFeatureGenerator:
         Returns:
             Tuple of (feature_values, feature_names)
         """
-        # Define feature order matching Phase 1 training
-        feature_order = [
-            # Temporal features
-            'hour', 'minute', 'day_of_week',
-            'hour_sin', 'hour_cos',
-            'is_market_open', 'is_open_30min', 'is_close_30min', 'minutes_to_close',
-
-            # Price features (for main symbol)
-            'SPX_close', 'SPX_sma_20', 'SPX_momentum_5',
-            'SPX_volatility_20', 'SPX_rsi', 'SPX_price_position',
-
-            # VIX features
-            'vix', 'vix_vix_sma_20', 'vix_vix_change',
-            'vix_regime_low', 'vix_regime_normal', 'vix_regime_elevated', 'vix_regime_high',
-
-            # Trade features
-            'strategy_Butterfly', 'strategy_Iron Condor', 'strategy_Vertical', 'strategy_Sonar',
-            'premium_normalized', 'risk_reward_ratio',
-            'pred_predicted', 'pred_price', 'pred_difference', 'prof_premium',
-            'strike_distance_pct', 'is_0dte'
-        ]
+        feature_order = self.feature_order
         
         # Extract values in order, using 0 for missing features
         feature_values = []

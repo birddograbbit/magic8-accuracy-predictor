@@ -60,8 +60,7 @@ python quick_start.py
 # Set up Magic8-Companion API
 python setup_companion_api.py
 
-# Update config/config.yaml:
-# Change primary: "mock" to primary: "companion"
+# Configuration now defaults to the companion provider
 ```
 
 ### Option 3: Direct IBKR (Standalone)

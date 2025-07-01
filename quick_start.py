@@ -59,6 +59,11 @@ def check_prerequisites():
         logger.warning("✗ Config file missing")
     else:
         logger.info("✓ Config file found")
+        import yaml
+        with open('config/config.yaml') as f:
+            cfg = yaml.safe_load(f)
+        provider = cfg.get('data_source', {}).get('primary', 'unknown')
+        logger.info(f"✓ Primary data provider: {provider}")
     
     # Check for data providers
     if not Path('src/data_providers').exists():
