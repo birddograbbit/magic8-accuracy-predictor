@@ -18,8 +18,8 @@ class XGBoostModelWrapper:
     
     def predict_proba(self, X):
         """Predict probabilities in scikit-learn format."""
-        # Create DMatrix
-        dmatrix = xgb.DMatrix(X)
+        # Create DMatrix with feature names to avoid XGBoost warnings
+        dmatrix = xgb.DMatrix(X, feature_names=self.feature_names)
         # Get probabilities for positive class
         proba_pos = self.booster.predict(dmatrix)
         # Create two-column format [prob_negative, prob_positive]

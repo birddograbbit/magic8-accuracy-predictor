@@ -141,6 +141,7 @@ magic8-accuracy-predictor/
    - Connect to IBKR API for live market data
    - Calculate technical indicators in real-time
    - Match exact features from training
+     (`is_market_open`, `<SYMBOL>_close`, `vix_vix_change`, etc.)
 
 2. **Prediction Pipeline**
    ```python

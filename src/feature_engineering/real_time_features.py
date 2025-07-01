@@ -50,7 +50,7 @@ class RealTimeFeatureGenerator:
         self.vix_config = self.config.get('vix', {})
         
         logger.info("RealTimeFeatureGenerator initialized")
-    
+
     def _default_config(self) -> Dict:
         """Get default feature configuration matching Phase 1."""
         return {
@@ -70,6 +70,15 @@ class RealTimeFeatureGenerator:
                 'regime_thresholds': [15, 20, 25]
             }
         }
+
+    async def _ensure_connected(self):
+        """Ensure the data provider is connected before fetching data."""
+        try:
+            if not await self.data_provider.is_connected():
+                await self.data_provider.connect()
+        except AttributeError:
+            # If provider does not implement connection logic
+            pass
     
     async def generate_features(
         self,
@@ -87,7 +96,10 @@ class RealTimeFeatureGenerator:
             Tuple of (feature_values, feature_names)
         """
         features = {}
-        
+
+        # Ensure data provider connection
+        await self._ensure_connected()
+
         # Parallel data fetching
         tasks = []
         
@@ -135,9 +147,11 @@ class RealTimeFeatureGenerator:
     
     async def _fetch_price_data(self, symbol: str) -> Dict:
         """Fetch price data for feature generation."""
+        await self._ensure_connected()
+
         # Get historical bars for technical indicators
         bars = await self.data_provider.get_price_data(symbol, bars=100)
-        
+
         # Get current price
         current = await self.data_provider.get_current_price(symbol)
         
@@ -148,9 +162,11 @@ class RealTimeFeatureGenerator:
     
     async def _fetch_vix_data(self) -> Dict:
         """Fetch VIX data for feature generation."""
+        await self._ensure_connected()
+
         # Get current VIX
         vix_current = await self.data_provider.get_vix_data()
-        
+
         # Get VIX history for SMA
         vix_bars = await self.data_provider.get_price_data('VIX', bars=30)
         
@@ -174,21 +190,25 @@ class RealTimeFeatureGenerator:
         features['hour_sin'] = math.sin(hour_angle)
         features['hour_cos'] = math.cos(hour_angle)
         
-        minute_angle = 2 * math.pi * now.minute / 60
-        features['minute_sin'] = math.sin(minute_angle)
-        features['minute_cos'] = math.cos(minute_angle)
-        
         # Market session indicators
         market_open = time(9, 30)
         market_close = time(16, 0)
         current_time = now.time()
-        
-        features['is_market_hours'] = float(
+
+        features['is_market_open'] = float(
             market_open <= current_time <= market_close
         )
-        
+
+        features['is_open_30min'] = float(
+            market_open <= current_time <= time(10, 0)
+        )
+
+        features['is_close_30min'] = float(
+            time(15, 30) <= current_time <= market_close
+        )
+
         # Minutes to close (important for 0DTE)
-        if features['is_market_hours']:
+        if features['is_market_open']:
             close_minutes = 16 * 60  # 4:00 PM
             current_minutes = now.hour * 60 + now.minute
             features['minutes_to_close'] = max(0, close_minutes - current_minutes)
@@ -219,16 +239,13 @@ class RealTimeFeatureGenerator:
         
         # Current price
         current_price = current['last']
-        features[f'{symbol}_price'] = current_price
+        features[f'{symbol}_close'] = current_price
         
         # SMA features
         for period in self.price_config.get('sma_periods', [20]):
             if len(df) >= period:
                 sma = df['close'].rolling(window=period).mean().iloc[-1]
                 features[f'{symbol}_sma_{period}'] = sma
-                features[f'{symbol}_price_vs_sma_{period}'] = (
-                    (current_price - sma) / sma * 100
-                )
         
         # Momentum
         for period in self.price_config.get('momentum_periods', [5]):
@@ -246,7 +263,7 @@ class RealTimeFeatureGenerator:
         rsi_period = self.price_config.get('rsi_period', 14)
         if len(df) >= rsi_period + 1:
             rsi = self._calculate_rsi(df['close'], rsi_period)
-            features[f'{symbol}_rsi_{rsi_period}'] = rsi
+            features[f'{symbol}_rsi'] = rsi
         
         # Price position in range
         if len(df) >= 20:
@@ -254,7 +271,7 @@ class RealTimeFeatureGenerator:
             low_20 = df['low'].tail(20).min()
             if high_20 > low_20:
                 price_position = (current_price - low_20) / (high_20 - low_20)
-                features[f'{symbol}_price_position_20'] = price_position
+                features[f'{symbol}_price_position'] = price_position
         
         return features
     
@@ -267,35 +284,36 @@ class RealTimeFeatureGenerator:
         
         # Current VIX level
         vix_level = current['last']
-        features['vix_level'] = vix_level
-        
-        # VIX change
-        features['vix_change'] = current.get('change', 0)
-        features['vix_change_pct'] = current.get('change_pct', 0)
+        features['vix'] = vix_level
+
+        # VIX change (percentage)
+        prev_close = None
+        if bars and len(bars) >= 2:
+            prev_close = bars[-2]['close']
+        if prev_close:
+            features['vix_vix_change'] = (vix_level - prev_close) / prev_close
+        else:
+            features['vix_vix_change'] = 0
         
         # VIX SMA
         if bars and len(bars) >= self.vix_config.get('sma_period', 20):
             df = pd.DataFrame(bars)
             vix_sma = df['close'].tail(20).mean()
-            features['vix_sma_20'] = vix_sma
-            features['vix_vs_sma'] = (vix_level - vix_sma) / vix_sma * 100
+            features['vix_vix_sma_20'] = vix_sma
         
         # VIX regime
         thresholds = self.vix_config.get('regime_thresholds', [15, 20, 25])
         if vix_level < thresholds[0]:
-            regime = 0  # Low
+            regime = 'low'
         elif vix_level < thresholds[1]:
-            regime = 1  # Normal
+            regime = 'normal'
         elif vix_level < thresholds[2]:
-            regime = 2  # Elevated
+            regime = 'elevated'
         else:
-            regime = 3  # High
-            
-        features['vix_regime'] = regime
-        
-        # One-hot encode regime
-        for i in range(4):
-            features[f'vix_regime_{i}'] = float(regime == i)
+            regime = 'high'
+
+        for name in ['low', 'normal', 'elevated', 'high']:
+            features[f'vix_regime_{name}'] = float(regime == name)
         
         return features
     
@@ -309,15 +327,16 @@ class RealTimeFeatureGenerator:
         
         # Strategy one-hot encoding
         strategy = order_details.get('strategy', 'Unknown')
-        strategies = ['Butterfly', 'Iron Condor', 'Vertical']
+        strategies = ['Butterfly', 'Iron Condor', 'Vertical', 'Sonar']
         
         for strat in strategies:
             features[f'strategy_{strat}'] = float(strategy == strat)
         
         # Premium normalized by price (if available)
         premium = order_details.get('premium', 0)
-        if premium and 'current_price' in features:
-            features['premium_normalized'] = premium / features.get(f'{symbol}_price', 1)
+        features['prof_premium'] = premium
+        if premium and f'{symbol}_close' in features:
+            features['premium_normalized'] = premium / features.get(f'{symbol}_close', 1)
         else:
             features['premium_normalized'] = 0
         
@@ -329,14 +348,19 @@ class RealTimeFeatureGenerator:
         else:
             features['risk_reward_ratio'] = 0
         
-        # Trade probability (if provided)
-        features['trade_probability'] = order_details.get('probability', 0.5)
+        # Predicted price features from Magic8
+        if 'predicted' in order_details:
+            features['pred_predicted'] = order_details['predicted']
+        if 'price' in order_details:
+            features['pred_price'] = order_details['price']
+        if 'predicted' in order_details and 'price' in order_details:
+            features['pred_difference'] = order_details['predicted'] - order_details['price']
         
         # Strike distance for single-leg strategies
         if strategy == 'Vertical':
             strikes = order_details.get('strikes', [])
-            if len(strikes) >= 2 and f'{symbol}_price' in features:
-                current_price = features[f'{symbol}_price']
+            if len(strikes) >= 2 and f'{symbol}_close' in features:
+                current_price = features[f'{symbol}_close']
                 avg_strike = sum(strikes[:2]) / 2
                 features['strike_distance_pct'] = (
                     (avg_strike - current_price) / current_price * 100
@@ -378,23 +402,21 @@ class RealTimeFeatureGenerator:
         feature_order = [
             # Temporal features
             'hour', 'minute', 'day_of_week',
-            'hour_sin', 'hour_cos', 'minute_sin', 'minute_cos',
-            'is_market_hours', 'minutes_to_close',
-            
+            'hour_sin', 'hour_cos',
+            'is_market_open', 'is_open_30min', 'is_close_30min', 'minutes_to_close',
+
             # Price features (for main symbol)
-            'SPX_price', 'SPX_sma_20', 'SPX_price_vs_sma_20',
-            'SPX_momentum_5', 'SPX_volatility_20', 'SPX_rsi_14',
-            'SPX_price_position_20',
-            
+            'SPX_close', 'SPX_sma_20', 'SPX_momentum_5',
+            'SPX_volatility_20', 'SPX_rsi', 'SPX_price_position',
+
             # VIX features
-            'vix_level', 'vix_change', 'vix_change_pct',
-            'vix_sma_20', 'vix_vs_sma',
-            'vix_regime', 'vix_regime_0', 'vix_regime_1',
-            'vix_regime_2', 'vix_regime_3',
-            
+            'vix', 'vix_vix_sma_20', 'vix_vix_change',
+            'vix_regime_low', 'vix_regime_normal', 'vix_regime_elevated', 'vix_regime_high',
+
             # Trade features
-            'strategy_Butterfly', 'strategy_Iron Condor', 'strategy_Vertical',
-            'premium_normalized', 'risk_reward_ratio', 'trade_probability',
+            'strategy_Butterfly', 'strategy_Iron Condor', 'strategy_Vertical', 'strategy_Sonar',
+            'premium_normalized', 'risk_reward_ratio',
+            'pred_predicted', 'pred_price', 'pred_difference', 'prof_premium',
             'strike_distance_pct', 'is_0dte'
         ]
         
