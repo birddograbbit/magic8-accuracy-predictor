@@ -6,18 +6,21 @@ from multiple sources:
 - Magic8-Companion's IB connection
 - Redis pub/sub
 - Standalone IB connection
+- Mock provider for testing
 """
 
 from .base_provider import BaseDataProvider
 from .companion_provider import CompanionDataProvider
 from .redis_provider import RedisDataProvider
 from .standalone_provider import StandaloneDataProvider
+from .mock_provider import MockDataProvider
 
 __all__ = [
     'BaseDataProvider',
     'CompanionDataProvider',
     'RedisDataProvider',
     'StandaloneDataProvider',
+    'MockDataProvider',
     'get_data_provider'
 ]
 
@@ -76,6 +79,9 @@ def _create_provider(provider_type: str, config: dict) -> BaseDataProvider:
             ib_port=provider_config.get('ib_port', 7498),
             client_id=provider_config.get('client_id', 99)
         )
+    
+    elif provider_type == 'mock':
+        return MockDataProvider(provider_config)
     
     else:
         raise ValueError(f"Unknown provider type: {provider_type}")
