@@ -18,6 +18,8 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 
+# Import model wrapper to ensure it's available for unpickling
+from .models.model_wrappers import XGBoostModelWrapper
 from .feature_engineering import RealTimeFeatureGenerator
 from .data_providers import get_data_provider
 

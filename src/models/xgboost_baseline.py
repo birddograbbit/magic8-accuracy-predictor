@@ -18,6 +18,10 @@ import logging
 from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
+import shutil
+
+# Import the model wrapper
+from .model_wrappers import XGBoostModelWrapper
 
 class XGBoostBaseline:
     def __init__(self, config_path=None):
@@ -315,7 +319,7 @@ class XGBoostBaseline:
         """Save trained model and preprocessing objects"""
         os.makedirs(model_dir, exist_ok=True)
         
-        # Save XGBoost model
+        # Save XGBoost model in native format
         self.model.save_model(os.path.join(model_dir, 'xgboost_baseline.json'))
         
         # Save scaler
@@ -332,7 +336,21 @@ class XGBoostBaseline:
         with open(os.path.join(model_dir, 'model_metadata.json'), 'w') as f:
             json.dump(metadata, f, indent=2)
         
+        # Save wrapped model for real-time predictor
+        self.logger.info("Creating wrapped model for real-time predictor...")
+        wrapped_model = XGBoostModelWrapper(self.model, self.feature_names, self.scaler)
+        
+        # Save wrapped model
+        wrapped_path = os.path.join(model_dir, 'xgboost_model.pkl')
+        joblib.dump(wrapped_model, wrapped_path)
+        
+        # Also copy to root models directory for backward compatibility
+        root_model_path = os.path.join('models', 'xgboost_phase1_model.pkl')
+        os.makedirs('models', exist_ok=True)
+        shutil.copy2(wrapped_path, root_model_path)
+        
         self.logger.info(f"Model saved to {model_dir}")
+        self.logger.info(f"Wrapped model saved to {wrapped_path} and {root_model_path}")
     
     def load_model(self, model_dir='models/phase1'):
         """Load saved model"""
@@ -376,7 +394,7 @@ class XGBoostBaseline:
         # Plot feature importance
         self.plot_feature_importance()
         
-        # Save model
+        # Save model (includes wrapped model)
         self.save_model()
         
         # Convert numpy types to Python native types for JSON serialization
@@ -406,6 +424,7 @@ class XGBoostBaseline:
             json.dump(results, f, indent=2, default=str)  # Use default=str as fallback
         
         self.logger.info("Phase 1 pipeline completed successfully!")
+        self.logger.info("✅ Wrapped model ready for real-time predictions!")
         
         return results
 
@@ -436,6 +455,9 @@ def main():
             print(f"  {strategy}: Accuracy={acc:.4f}, n={n_samples}")
         else:
             print(f"  {strategy}: Accuracy=N/A, n={n_samples}")
+    
+    print("\n✅ Model ready for real-time predictions!")
+    print("   Run 'python quick_start.py' to test predictions")
 
 
 if __name__ == "__main__":
