@@ -7,6 +7,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 import numpy as np
+import logging
 
 from .base_provider import BaseDataProvider
 
@@ -19,8 +20,9 @@ class MockDataProvider(BaseDataProvider):
     
     def __init__(self, config: Optional[Dict] = None):
         """Initialize mock data provider."""
-        super().__init__(config)
+        self.config = config or {}
         self.connected = False
+        self.logger = logging.getLogger(__name__)
         
         # Base prices for symbols
         self.base_prices = {
@@ -49,6 +51,108 @@ class MockDataProvider(BaseDataProvider):
         """Simulate disconnection."""
         self.connected = False
         self.logger.info("MockDataProvider disconnected")
+        
+    async def is_connected(self) -> bool:
+        """Check if provider is connected."""
+        return self.connected
+        
+    async def get_current_price(self, symbol: str) -> Dict:
+        """
+        Get current price snapshot for a symbol.
+        
+        Returns dictionary with current price data as specified by base class.
+        """
+        if not self.connected:
+            raise ConnectionError("MockDataProvider not connected")
+            
+        base_price = self.base_prices.get(symbol, 100.0)
+        
+        # Add some random variation
+        variation = random.uniform(-0.01, 0.01)  # ±1%
+        price = base_price * (1 + variation)
+        
+        # Generate bid/ask spread
+        spread = random.uniform(0.01, 0.05)
+        bid = price - spread / 2
+        ask = price + spread / 2
+        
+        return {
+            'symbol': symbol,
+            'last': price,
+            'bid': bid,
+            'ask': ask,
+            'bid_size': random.randint(10, 100),
+            'ask_size': random.randint(10, 100),
+            'time': datetime.now().isoformat()
+        }
+        
+    async def get_price_data(
+        self,
+        symbol: str,
+        bars: int = 100,
+        interval: str = "5 mins"
+    ) -> List[Dict]:
+        """
+        Get historical price bars for a symbol.
+        
+        Returns list of price bars with OHLCV data as specified by base class.
+        """
+        if not self.connected:
+            raise ConnectionError("MockDataProvider not connected")
+            
+        base_price = self.base_prices.get(symbol, 100.0)
+        
+        # Parse interval
+        if "min" in interval:
+            minutes = int(interval.split()[0])
+            time_delta = timedelta(minutes=minutes)
+        elif "hour" in interval:
+            hours = int(interval.split()[0])
+            time_delta = timedelta(hours=hours)
+        else:
+            time_delta = timedelta(minutes=5)
+            
+        # Generate historical data
+        data = []
+        current_time = datetime.now()
+        current_price = base_price
+        
+        for i in range(bars):
+            # Calculate bar time
+            bar_time = current_time - (time_delta * i)
+            
+            # Skip non-market hours for intraday
+            if "min" in interval or "hour" in interval:
+                if bar_time.hour < 9 or bar_time.hour >= 16:
+                    continue
+                    
+            # Price simulation with trend and volatility
+            trend = 0.0001 * (i % 20 - 10)  # Cyclical trend
+            volatility = 0.002 * abs(np.sin(i * 0.1))  # Varying volatility
+            change = random.gauss(trend, volatility)
+            
+            current_price *= (1 + change)
+            
+            # OHLC calculation
+            high = current_price * (1 + random.uniform(0, 0.002))
+            low = current_price * (1 - random.uniform(0, 0.002))
+            open_price = current_price * (1 + random.uniform(-0.001, 0.001))
+            
+            bar = {
+                'time': bar_time.isoformat(),
+                'open': open_price,
+                'high': high,
+                'low': low,
+                'close': current_price,
+                'volume': random.randint(100000, 1000000)
+            }
+            
+            data.append(bar)
+            
+        # Reverse to have oldest first
+        data.reverse()
+        
+        return data
         
     async def health_check(self) -> Dict[str, Any]:
         """Return mock health status."""
@@ -96,85 +200,26 @@ class MockDataProvider(BaseDataProvider):
         if not self.connected:
             return None
             
-        # Check cache
-        cache_key = f"{symbol}_{interval}_{lookback_days}"
-        if cache_key in self._historical_cache:
-            return self._historical_cache[cache_key]
-            
-        base_price = self.base_prices.get(symbol, 100.0)
-        
-        # Calculate number of bars
+        # Use get_price_data for consistency
         if interval == '5m':
-            bars_per_day = 78  # 6.5 hours * 12 bars/hour
+            bars = lookback_days * 78  # 6.5 hours * 12 bars/hour
+            return await self.get_price_data(symbol, bars, "5 mins")
         elif interval == '1h':
-            bars_per_day = 7
-        elif interval == '1d':
-            bars_per_day = 1
+            bars = lookback_days * 7
+            return await self.get_price_data(symbol, bars, "1 hour")
         else:
-            bars_per_day = 78
+            bars = lookback_days * 78
+            return await self.get_price_data(symbol, bars, "5 mins")
             
-        total_bars = bars_per_day * lookback_days
-        
-        # Generate historical data
-        data = []
-        current_time = datetime.now()
-        current_price = base_price
-        
-        for i in range(total_bars):
-            # Time calculation
-            if interval == '5m':
-                bar_time = current_time - timedelta(minutes=5 * i)
-            elif interval == '1h':
-                bar_time = current_time - timedelta(hours=i)
-            elif interval == '1d':
-                bar_time = current_time - timedelta(days=i)
-            else:
-                bar_time = current_time - timedelta(minutes=5 * i)
-                
-            # Skip non-market hours for intraday
-            if interval in ['5m', '1h']:
-                if bar_time.hour < 9 or bar_time.hour >= 16:
-                    continue
-                    
-            # Price simulation with trend and volatility
-            trend = 0.0001 * (i % 20 - 10)  # Cyclical trend
-            volatility = 0.002 * abs(np.sin(i * 0.1))  # Varying volatility
-            change = random.gauss(trend, volatility)
-            
-            current_price *= (1 + change)
-            
-            # OHLC calculation
-            high = current_price * (1 + random.uniform(0, 0.002))
-            low = current_price * (1 - random.uniform(0, 0.002))
-            open_price = current_price * (1 + random.uniform(-0.001, 0.001))
-            
-            bar = {
-                'timestamp': bar_time,
-                'open': open_price,
-                'high': high,
-                'low': low,
-                'close': current_price,
-                'volume': random.randint(100000, 1000000)
-            }
-            
-            data.append(bar)
-            
-        # Reverse to have oldest first
-        data.reverse()
-        
-        # Cache the result
-        self._historical_cache[cache_key] = data
-        
-        return data
-        
     async def get_option_chain(
         self,
         symbol: str,
-        expiry: str
-    ) -> Optional[Dict[str, Any]]:
+        expiry: str,
+        right: Optional[str] = None
+    ) -> List[Dict]:
         """Generate mock option chain."""
         if not self.connected:
-            return None
+            raise ConnectionError("MockDataProvider not connected")
             
         base_price = self.base_prices.get(symbol, 100.0)
         
@@ -188,53 +233,63 @@ class MockDataProvider(BaseDataProvider):
             strikes.append(strike)
             
         # Generate option data
-        calls = []
-        puts = []
+        options = []
         
         for strike in strikes:
             # Simple Black-Scholes approximation for mock data
             moneyness = (base_price - strike) / base_price
             time_to_expiry = 1 / 365  # Assume 1 day for 0DTE
             
-            # Call option
-            call_price = max(0.01, base_price - strike + random.uniform(0.1, 0.5))
-            call_iv = 0.15 + abs(moneyness) * 0.1 + random.uniform(-0.02, 0.02)
+            # Generate both calls and puts unless filtered
+            rights_to_generate = [right] if right else ['CALL', 'PUT']
             
-            calls.append({
-                'strike': strike,
-                'bid': call_price - 0.05,
-                'ask': call_price + 0.05,
-                'last': call_price,
-                'iv': call_iv,
-                'volume': random.randint(0, 1000),
-                'open_interest': random.randint(0, 5000)
-            })
-            
-            # Put option
-            put_price = max(0.01, strike - base_price + random.uniform(0.1, 0.5))
-            put_iv = 0.15 + abs(moneyness) * 0.1 + random.uniform(-0.02, 0.02)
-            
-            puts.append({
-                'strike': strike,
-                'bid': put_price - 0.05,
-                'ask': put_price + 0.05,
-                'last': put_price,
-                'iv': put_iv,
-                'volume': random.randint(0, 1000),
-                'open_interest': random.randint(0, 5000)
-            })
-            
-        return {
-            'symbol': symbol,
-            'expiry': expiry,
-            'underlying_price': base_price,
-            'calls': calls,
-            'puts': puts
-        }
+            for opt_right in rights_to_generate:
+                if opt_right == 'CALL':
+                    # Call option
+                    price = max(0.01, base_price - strike + random.uniform(0.1, 0.5))
+                    iv = 0.15 + abs(moneyness) * 0.1 + random.uniform(-0.02, 0.02)
+                    delta = 0.5 + moneyness * 2  # Simplified
+                else:
+                    # Put option
+                    price = max(0.01, strike - base_price + random.uniform(0.1, 0.5))
+                    iv = 0.15 + abs(moneyness) * 0.1 + random.uniform(-0.02, 0.02)
+                    delta = -0.5 + moneyness * 2  # Simplified
+                
+                options.append({
+                    'symbol': symbol,
+                    'expiry': expiry,
+                    'strike': strike,
+                    'right': opt_right,
+                    'bid': price - 0.05,
+                    'ask': price + 0.05,
+                    'last': price,
+                    'volume': random.randint(0, 1000),
+                    'open_interest': random.randint(0, 5000),
+                    'implied_volatility': iv,
+                    'delta': max(-1, min(1, delta)),
+                    'gamma': 0.01 * (1 - abs(moneyness)),
+                    'theta': -0.5 - random.uniform(0, 0.5),
+                    'vega': 0.5 + random.uniform(0, 0.3)
+                })
+                
+        return options
         
-    async def get_vix_data(self) -> Optional[Dict[str, Any]]:
+    async def get_vix_data(self) -> Dict:
         """Get mock VIX data."""
-        return await self.get_market_data('VIX')
+        if not self.connected:
+            raise ConnectionError("MockDataProvider not connected")
+            
+        base_vix = self.base_prices.get('VIX', 15.0)
+        current_vix = base_vix + random.uniform(-2, 2)
+        
+        return {
+            'last': current_vix,
+            'change': random.uniform(-1, 1),
+            'change_pct': random.uniform(-5, 5),
+            'high': current_vix + random.uniform(0, 1),
+            'low': current_vix - random.uniform(0, 1),
+            'time': datetime.now().isoformat()
+        }
 
 
 # Add to __init__.py exports
