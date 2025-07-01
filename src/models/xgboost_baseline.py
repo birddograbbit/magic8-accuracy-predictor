@@ -16,9 +16,13 @@ import joblib
 import os
 import logging
 from datetime import datetime
+from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
 import shutil
+
+# Determine repository root so paths work regardless of where the script is run
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Import the model wrapper
 from src.models.model_wrappers import XGBoostModelWrapper
@@ -52,13 +56,14 @@ class XGBoostBaseline:
     
     def _setup_logger(self):
         """Setup logging configuration"""
-        os.makedirs('logs', exist_ok=True)
+        log_dir = REPO_ROOT / 'logs'
+        os.makedirs(log_dir, exist_ok=True)
         
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             handlers=[
-                logging.FileHandler(f'logs/xgboost_baseline_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'),
+                logging.FileHandler(log_dir / f"xgboost_baseline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"),
                 logging.StreamHandler()
             ]
         )
@@ -66,15 +71,18 @@ class XGBoostBaseline:
     
     def load_data(self, data_dir='data/phase1_processed'):
         """Load preprocessed Phase 1 data"""
+        data_dir = Path(data_dir)
+        if not data_dir.is_absolute():
+            data_dir = REPO_ROOT / data_dir
         self.logger.info(f"Loading data from {data_dir}")
-        
+
         # Load train, validation, and test data
-        self.train_df = pd.read_csv(os.path.join(data_dir, 'train_data.csv'))
-        self.val_df = pd.read_csv(os.path.join(data_dir, 'val_data.csv'))
-        self.test_df = pd.read_csv(os.path.join(data_dir, 'test_data.csv'))
+        self.train_df = pd.read_csv(data_dir / 'train_data.csv')
+        self.val_df = pd.read_csv(data_dir / 'val_data.csv')
+        self.test_df = pd.read_csv(data_dir / 'test_data.csv')
         
         # Load feature info
-        with open(os.path.join(data_dir, 'feature_info.json'), 'r') as f:
+        with open(data_dir / 'feature_info.json', 'r') as f:
             self.feature_info = json.load(f)
         
         self.feature_names = self.feature_info['feature_names']
@@ -304,8 +312,9 @@ class XGBoostBaseline:
         plt.tight_layout()
         
         # Save plot
-        os.makedirs('plots', exist_ok=True)
-        plt.savefig('plots/feature_importance_phase1.png', dpi=300)
+        plot_dir = REPO_ROOT / 'plots'
+        os.makedirs(plot_dir, exist_ok=True)
+        plt.savefig(plot_dir / 'feature_importance_phase1.png', dpi=300)
         plt.close()
         
         # Log top features
@@ -317,13 +326,16 @@ class XGBoostBaseline:
     
     def save_model(self, model_dir='models/phase1'):
         """Save trained model and preprocessing objects"""
+        model_dir = Path(model_dir)
+        if not model_dir.is_absolute():
+            model_dir = REPO_ROOT / model_dir
         os.makedirs(model_dir, exist_ok=True)
         
         # Save XGBoost model in native format
-        self.model.save_model(os.path.join(model_dir, 'xgboost_baseline.json'))
+        self.model.save_model(str(model_dir / 'xgboost_baseline.json'))
         
         # Save scaler
-        joblib.dump(self.scaler, os.path.join(model_dir, 'scaler.pkl'))
+        joblib.dump(self.scaler, model_dir / 'scaler.pkl')
         
         # Save feature names and config
         metadata = {
@@ -333,7 +345,7 @@ class XGBoostBaseline:
             'training_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
-        with open(os.path.join(model_dir, 'model_metadata.json'), 'w') as f:
+        with open(model_dir / 'model_metadata.json', 'w') as f:
             json.dump(metadata, f, indent=2)
         
         # Save wrapped model for real-time predictor
@@ -341,12 +353,12 @@ class XGBoostBaseline:
         wrapped_model = XGBoostModelWrapper(self.model, self.feature_names, self.scaler)
         
         # Save wrapped model
-        wrapped_path = os.path.join(model_dir, 'xgboost_model.pkl')
+        wrapped_path = model_dir / 'xgboost_model.pkl'
         joblib.dump(wrapped_model, wrapped_path)
         
         # Also copy to root models directory for backward compatibility
-        root_model_path = os.path.join('models', 'xgboost_phase1_model.pkl')
-        os.makedirs('models', exist_ok=True)
+        root_model_path = REPO_ROOT / 'models' / 'xgboost_phase1_model.pkl'
+        os.makedirs(root_model_path.parent, exist_ok=True)
         shutil.copy2(wrapped_path, root_model_path)
         
         self.logger.info(f"Model saved to {model_dir}")
@@ -354,15 +366,19 @@ class XGBoostBaseline:
     
     def load_model(self, model_dir='models/phase1'):
         """Load saved model"""
+        model_dir = Path(model_dir)
+        if not model_dir.is_absolute():
+            model_dir = REPO_ROOT / model_dir
+
         # Load XGBoost model
         self.model = xgb.Booster()
-        self.model.load_model(os.path.join(model_dir, 'xgboost_baseline.json'))
+        self.model.load_model(str(model_dir / 'xgboost_baseline.json'))
         
         # Load scaler
-        self.scaler = joblib.load(os.path.join(model_dir, 'scaler.pkl'))
+        self.scaler = joblib.load(model_dir / 'scaler.pkl')
         
         # Load metadata
-        with open(os.path.join(model_dir, 'model_metadata.json'), 'r') as f:
+        with open(model_dir / 'model_metadata.json', 'r') as f:
             metadata = json.load(f)
         
         self.feature_names = metadata['feature_names']
@@ -420,7 +436,8 @@ class XGBoostBaseline:
             'strategy_results': convert_to_native(strategy_results)
         }
         
-        with open('models/phase1/results.json', 'w') as f:
+        results_path = REPO_ROOT / 'models' / 'phase1' / 'results.json'
+        with open(results_path, 'w') as f:
             json.dump(results, f, indent=2, default=str)  # Use default=str as fallback
         
         self.logger.info("Phase 1 pipeline completed successfully!")
