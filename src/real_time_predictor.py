@@ -18,10 +18,17 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 
-# Import model wrapper to ensure it's available for unpickling
-from .models.model_wrappers import XGBoostModelWrapper
-from .feature_engineering import RealTimeFeatureGenerator
-from .data_providers import get_data_provider
+# Use absolute imports for standalone execution compatibility
+try:
+    # Try relative import first (when used as package)
+    from .models.model_wrappers import XGBoostModelWrapper
+    from .feature_engineering import RealTimeFeatureGenerator
+    from .data_providers import get_data_provider
+except ImportError:
+    # Fall back to absolute imports (when used standalone)
+    from src.models.model_wrappers import XGBoostModelWrapper
+    from src.feature_engineering import RealTimeFeatureGenerator
+    from src.data_providers import get_data_provider
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +67,7 @@ class Magic8Predictor:
     ):
         """
         Initialize the predictor.
-        
+
         Args:
             model_path: Path to the trained XGBoost model
             data_provider_config: Configuration for data provider
@@ -157,7 +164,7 @@ class Magic8Predictor:
     ) -> PredictionResult:
         """
         Predict win/loss probability for a Magic8 order.
-        
+
         Args:
             order: Dictionary containing order details
             use_cache: Whether to use cached predictions
@@ -237,7 +244,7 @@ class Magic8Predictor:
     ) -> List[PredictionResult]:
         """
         Predict multiple orders in batch.
-        
+
         Args:
             orders: List of order dictionaries
             max_concurrent: Maximum concurrent predictions
@@ -288,7 +295,7 @@ class Magic8Predictor:
     async def warmup(self, sample_orders: Optional[List[Dict]] = None):
         """
         Warmup the predictor with sample predictions.
-        
+
         Args:
             sample_orders: Optional list of sample orders
         """
@@ -327,18 +334,18 @@ class Magic8Predictor:
 class PredictionService:
     """
     High-level service for managing predictions.
-    
+
     This service handles:
     - Multiple model management
     - Symbol-specific model selection
     - Fallback strategies
     - Integration with external systems
     """
-    
+
     def __init__(self, config: Dict):
         """
         Initialize the prediction service.
-        
+
         Args:
             config: Service configuration dictionary
         """
@@ -377,7 +384,7 @@ class PredictionService:
     async def predict(self, order: Dict) -> Optional[PredictionResult]:
         """
         Predict order outcome with appropriate model.
-        
+
         Args:
             order: Order dictionary
             
@@ -427,7 +434,7 @@ _prediction_service = None
 def get_prediction_service(config: Optional[Dict] = None) -> PredictionService:
     """
     Get or create the prediction service singleton.
-    
+
     Args:
         config: Optional configuration dictionary
         
