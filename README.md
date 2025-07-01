@@ -36,6 +36,10 @@ python process_magic8_data_optimized_v2.py
 cp data/processed_optimized_v2/magic8_trades_complete.csv data/normalized/normalized_aggregated.csv
 ```
 
+The processor automatically detects the available profit column. If your CSVs
+don't have a `Profit` column (December 2023 onward) it will fall back to
+`Raw` or `Managed`.
+
 ### Step 3: Run Optimized ML Pipeline
 ```bash
 # Feature engineering - now runs in 2-5 minutes!
