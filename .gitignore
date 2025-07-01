@@ -1,59 +1,53 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-.venv/
-ENV/
-.env
 
+__pycache__/
+.DS_Store
+.env
+.idea/
+.ipynb_checkpoints/
+.Python
+.venv/
+.vscode/
+*.bak
+*.csv
+*.h5
+*.ipynb
+*.joblib
+*.log
+*.parquet
+*.pkl
+*.pth
+*.py[cod]
+*.pyc
+*.so
+*.swo
+*.swp
+*.tmp
+*~
+*$py.class
 # Data directories (too large for git)
+# IDE
+# Jupyter
+# Logs
+# Model files
+# OS
+# Python
+# Temporary files
+# Test outputs
+archive/
+data/ibkr/
 data/phase1_processed/
 data/processed_fixed/
-data/processed_optimized/
 data/processed_optimized_v2/
+data/processed_optimized/
 data/source/
-data/ibkr/
-*.csv
-*.parquet
-
-# Model files
-models/
-*.pkl
-*.joblib
-*.h5
-*.pth
-
-# Jupyter
-.ipynb_checkpoints/
-*.ipynb
-
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Test outputs
+env/
+ENV/
 existing_data_analysis.json
-strategy_parsing_test.json
-phase1_processed/
-
-# Logs
-*.log
 logs/
-
-# Temporary files
-*.tmp
-*.bak
-*~
+models/
+phase1_processed/
 plots/
-archive/
 reports/
+strategy_parsing_test.json
+Thumbs.db
+venv/
