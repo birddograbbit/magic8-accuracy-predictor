@@ -43,7 +43,8 @@ class Magic8DataProcessorOptimized:
         self.strategies = ['Butterfly', 'Iron Condor', 'Vertical', 'Sonar']
         
         # Data quality tracking
-        self.quality_issues = defaultdict(list)
+        # Pre-create missing_profit list for easier diagnostics
+        self.quality_issues = defaultdict(list, {"missing_profit": []})
         
         # Current batch of trades
         self.current_batch = []
@@ -316,11 +317,18 @@ class Magic8DataProcessorOptimized:
                     'risk': self.safe_float(row.get('Risk')),
                     'reward': self.safe_float(row.get('Reward')),
                     'ratio': self.safe_float(row.get('Ratio')),
-                    'profit': self.safe_float(row.get('Profit')),
+                    'profit': self.safe_float(row.get('Profit') or row.get('Raw') or row.get('Managed')),
                     'source_file': 'profit',
                     'format_year': 2023,
                     'timestamp': timestamp
                 }
+
+                if trade['profit'] is None:
+                    self.quality_issues['missing_profit'].append({
+                        'file': str(file_path),
+                        'row': row_num,
+                        'available_columns': list(row.keys())
+                    })
                 
                 # Validate and add trade
                 self.validate_and_add_trade(trade, str(file_path))
@@ -365,12 +373,19 @@ class Magic8DataProcessorOptimized:
                     'stop': self.safe_float(row.get('Stop')),
                     'raw': self.safe_float(row.get('Raw')),
                     'managed': self.safe_float(row.get('Managed')),
-                    'profit': self.safe_float(row.get('Raw') or row.get('raw')),
+                    'profit': self.safe_float(row.get('Profit') or row.get('Raw') or row.get('Managed')),
                     'trade_description': self.clean_string(row.get('Trade', '')),
                     'source_file': 'profit',
                     'format_year': 2024,
                     'timestamp': f"{folder_date.strftime('%Y-%m-%d')} {time_str}:00" if time_str else None
                 }
+
+                if trade['profit'] is None:
+                    self.quality_issues['missing_profit'].append({
+                        'file': str(file_path),
+                        'row': row_num,
+                        'available_columns': list(row.keys())
+                    })
                 
                 # Validate and add trade
                 self.validate_and_add_trade(trade, str(file_path))
@@ -413,13 +428,20 @@ class Magic8DataProcessorOptimized:
                     'risk': self.safe_float(row.get('Risk')),
                     'expected_premium': self.safe_float(row.get('ExpectedPremium')),
                     'actual_premium': self.safe_float(row.get('ActualPremium')),
-                    'profit': self.safe_float(row.get('Profit')),
+                    'profit': self.safe_float(row.get('Profit') or row.get('Raw') or row.get('Managed')),
                     'total_profit': self.safe_float(row.get('TotalProfit')),
                     'trade_description': self.clean_string(row.get('Trade', '')),
                     'source_file': 'profit',
                     'format_year': 2025,
                     'timestamp': f"{folder_date.strftime('%Y-%m-%d')} {time_str}:00" if time_str else None
                 }
+
+                if trade['profit'] is None:
+                    self.quality_issues['missing_profit'].append({
+                        'file': str(file_path),
+                        'row': row_num,
+                        'available_columns': list(row.keys())
+                    })
                 
                 # Validate and add trade
                 self.validate_and_add_trade(trade, str(file_path))
@@ -458,6 +480,7 @@ class Magic8DataProcessorOptimized:
                         'symbol': self.clean_string(row.get('Symbol', '')),
                         'strategy': self.clean_string(row.get('Name', '')),  # IMPORTANT: Use Name column
                         'premium': self.safe_float(row.get('Premium')),
+                        'profit': self.safe_float(row.get('Profit') or row.get('Raw') or row.get('Managed')),
                         'risk': self.safe_float(row.get('Risk')),
                         'expected_move': self.safe_float(row.get('ExpectedMove')),
                         'predicted': self.safe_float(row.get('Predicted')),
@@ -467,6 +490,13 @@ class Magic8DataProcessorOptimized:
                         'format_year': 2024,
                         'timestamp': f"{trade_date} {est_time}:00"
                     }
+
+                    if trade['profit'] is None:
+                        self.quality_issues['missing_profit'].append({
+                            'file': str(file_path),
+                            'row': row_num,
+                            'available_columns': list(row.keys())
+                        })
                     
                     # Add trade (duplicate checking would require loading previous data)
                     self.validate_and_add_trade(trade, str(file_path))

@@ -114,6 +114,10 @@ The Magic8 Accuracy Predictor is a machine learning system designed to predict t
   - `timestamp` → `interval_datetime`
   - etc.
 
+### 3b. Profit Column Variations
+- **Problem**: Late‑2023 CSV files dropped the `Profit` column and use `Raw` or `Managed` instead.
+- **Solution**: The processor now falls back to `Profit`, then `Raw`, then `Managed` so wins are captured.
+
 ### 4. Time-Series Merge Optimization
 - **Problem**: Nested loop with point-by-point lookups (O(n×m))
 - **Solution**: Use `pd.merge_asof()` for efficient time-based joins
