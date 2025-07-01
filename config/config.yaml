@@ -7,7 +7,7 @@ system:
 # Data source configuration
 data_source:
   primary: "companion"  # Options: companion, redis, standalone
-  fallback: "redis"     # Optional fallback if primary fails
+  fallback: "standalone"     # Optional fallback if primary fails
   
   companion:
     enabled: true
@@ -26,7 +26,7 @@ data_source:
       option_data: "market:options:{symbol}"
       
   standalone:
-    enabled: false
+    enabled: true
     ib_host: "127.0.0.1"
     ib_port: 7498  # Different port to avoid conflicts
     client_id: 99   # Unique client ID
@@ -35,7 +35,7 @@ data_source:
 prediction:
   models:
     - name: "xgboost_phase1"
-      path: "models/xgboost_phase1_model.pkl"
+      path: "models/phase1/xgboost_model.pkl"  # Will create this from the .json model
       symbols: ["SPX", "SPY", "RUT", "QQQ", "XSP", "NDX", "AAPL", "TSLA"]
       version: "1.0.0"
     
