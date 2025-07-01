@@ -23,7 +23,6 @@ from src.data_providers.base_provider import BaseDataProvider
 
 logger = logging.getLogger(__name__)
 
-
 class RealTimeFeatureGenerator:
     """
     Generates features for real-time predictions matching Phase 1 training.
