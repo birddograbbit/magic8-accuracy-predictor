@@ -62,6 +62,10 @@ python src/phase1_data_preparation.py
 
 # Train XGBoost model (2-3 minutes)
 python src/models/xgboost_baseline.py
+
+# This training command automatically saves a wrapped model for the
+# real-time predictor at `models/phase1/xgboost_model.pkl` (and a copy
+# at `models/xgboost_phase1_model.pkl`).
 ```
 
 ### Step 5: Make Predictions (Next Phase)

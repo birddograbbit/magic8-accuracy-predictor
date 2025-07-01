@@ -6,7 +6,7 @@ This guide will help you get your first real-time Magic8 order prediction runnin
 
 ## 🆕 Just Trained Your Model? Run This First!
 
-If you just completed Phase 1 training (like the output shows), you need to convert your model:
+If you trained using the current `src/models/xgboost_baseline.py` script, your model is already saved in the correct format.  Older models may need conversion:
 
 ```bash
 # Pull latest changes and fix everything
@@ -15,17 +15,17 @@ python fix_and_run.py
 ```
 
 This script will:
-1. Convert your trained model to the right format
+1. Convert your trained model if needed
 2. Set up test configuration (no external dependencies)
 3. Run your first prediction automatically
 
 ## Manual Steps (if fix_and_run.py doesn't work)
 
-### Step 1: Convert Your Trained Model
+### Step 1: Convert Your Trained Model *(only for older models)*
 
 ```bash
-# The training created models/phase1/xgboost_baseline.json
-# We need to convert it to .pkl format
+# Older versions saved `models/phase1/xgboost_baseline.json`
+# Convert it to `.pkl` format if you still have that file
 python prepare_model_for_predictor.py
 ```
 
@@ -42,7 +42,7 @@ You've already done:
 - ✅ `python src/models/xgboost_baseline.py` (Model trained - 88.21% accuracy!)
 
 Now do:
-1. **Convert Model**: `python prepare_model_for_predictor.py`
+1. *(If using an older model)* **Convert Model**: `python prepare_model_for_predictor.py`
 2. **Test Prediction**: `python quick_start.py`
 3. **Monitor**: `python monitor_predictions.py` (in another terminal)
 
@@ -75,7 +75,7 @@ python setup_companion_api.py
 ### 🛠️ `prepare_model_for_predictor.py`
 - Converts `models/phase1/xgboost_baseline.json` to `models/phase1/xgboost_model.pkl`
 - Creates a wrapper that the real-time predictor can use
-- **Run this after training!**
+- **Only required for models trained with older scripts**
 
 ### 🎯 `quick_start.py`
 - Checks prerequisites
@@ -97,7 +97,8 @@ python setup_companion_api.py
 
 ### "Model not found at models/xgboost_phase1_model.pkl"
 ```bash
-# You need to convert your trained model:
+# This usually means the training script didn't run or you have an old model.
+# Run the converter to create the wrapped model:
 python prepare_model_for_predictor.py
 ```
 
@@ -124,8 +125,8 @@ Based on your output:
   - Iron Condor: 96.24%
   - Sonar: 88.70%
   - Vertical: 91.92%
-- ❌ Model needs conversion for real-time predictor
-- ❌ Dependencies might need updating
+ - ✅ Model already wrapped for real-time predictor if you used the baseline training script
+ - ❌ Dependencies might need updating
 
 ## Next Steps
 
@@ -146,7 +147,7 @@ Based on your output:
 
 ## Success Checklist
 
-- [ ] Model converted to .pkl format
+ - [ ] Model converted to .pkl format (older models only)
 - [ ] First prediction successful
 - [ ] Monitoring dashboard running
 - [ ] DiscordTrading integration complete
