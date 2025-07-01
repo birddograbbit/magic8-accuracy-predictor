@@ -21,7 +21,7 @@ import seaborn as sns
 import shutil
 
 # Import the model wrapper
-from .model_wrappers import XGBoostModelWrapper
+from model_wrappers import XGBoostModelWrapper
 
 class XGBoostBaseline:
     def __init__(self, config_path=None):
