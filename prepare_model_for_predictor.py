@@ -14,6 +14,9 @@ import os
 from pathlib import Path
 import shutil
 
+# Determine repository root so paths work regardless of current working dir
+REPO_ROOT = Path(__file__).resolve().parent
+
 # Import the model wrapper from the proper location
 from src.models.model_wrappers import XGBoostModelWrapper
 
@@ -22,7 +25,7 @@ def convert_model():
     """Convert XGBoost model to joblib format."""
     
     # Paths
-    model_dir = Path('models/phase1')
+    model_dir = REPO_ROOT / 'models' / 'phase1'
     json_model_path = model_dir / 'xgboost_baseline.json'
     metadata_path = model_dir / 'model_metadata.json'
     scaler_path = model_dir / 'scaler.pkl'
@@ -69,7 +72,7 @@ def convert_model():
         joblib.dump(wrapped_model, output_path)
         
         # Also copy to root models directory for backward compatibility
-        root_model_path = Path('models/xgboost_phase1_model.pkl')
+        root_model_path = REPO_ROOT / 'models' / 'xgboost_phase1_model.pkl'
         print(f"Creating copy at {root_model_path}")
         shutil.copy2(output_path, root_model_path)
         
@@ -97,8 +100,8 @@ def convert_model():
 def main():
     """Main function."""
     # Create models directory if it doesn't exist
-    Path('models').mkdir(exist_ok=True)
-    Path('models/phase1').mkdir(exist_ok=True)
+    (REPO_ROOT / 'models').mkdir(exist_ok=True)
+    (REPO_ROOT / 'models' / 'phase1').mkdir(exist_ok=True)
     
     # Convert the model
     success = convert_model()

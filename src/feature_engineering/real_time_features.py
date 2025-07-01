@@ -18,7 +18,8 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..data_providers.base_provider import BaseDataProvider
+# Use absolute import so the module works both as a package and standalone
+from src.data_providers.base_provider import BaseDataProvider
 
 logger = logging.getLogger(__name__)
 
