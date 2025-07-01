@@ -154,10 +154,26 @@ magic8-accuracy-predictor/
    ```
 
 3. **Integration Components**
-   - WebSocket connection to Magic8
-   - IBKR API for market data
-   - Redis for feature caching
-   - REST API for predictions
+ - WebSocket connection to Magic8
+  - IBKR API for market data
+  - Redis for feature caching
+  - REST API for predictions
+
+### Enabling Magic8-Companion Data API
+1. In the `Magic8-Companion` repository add the FastAPI endpoints:
+   ```bash
+   cd /path/to/Magic8-Companion
+   python ../magic8-accuracy-predictor/setup_companion_api.py
+   ```
+2. Start the companion with the API enabled:
+   ```bash
+   export M8C_ENABLE_DATA_API=true
+   python -m magic8_companion
+   ```
+3. Verify the API is running:
+   ```bash
+   curl http://localhost:8765/health
+   ```
 
 4. **Monitoring & Feedback**
    - Track prediction accuracy

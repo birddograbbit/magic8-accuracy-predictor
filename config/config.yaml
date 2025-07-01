@@ -6,15 +6,15 @@ system:
 
 # Data source configuration
 data_source:
-  primary: "mock"  # Using mock for testing without dependencies
-  fallback: "standalone"     # Optional fallback if primary fails
+  primary: "companion"  # Use Magic8-Companion API by default
+  fallback: "standalone"     # Optional fallback if companion fails
   
   mock:
     enabled: true
     # Mock provider requires no configuration
     
   companion:
-    enabled: false  # Disabled for testing
+    enabled: true
     base_url: "http://localhost:8765"
     timeout: 5
     retry_attempts: 3
