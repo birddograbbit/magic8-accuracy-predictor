@@ -18,16 +18,10 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-# Use absolute import for better compatibility
-try:
-    # Try relative import first (when used as package)
-    from ..data_providers.base_provider import BaseDataProvider
-except ImportError:
-    # Fall back to absolute import (when used standalone)
-    from src.data_providers.base_provider import BaseDataProvider
+# Use absolute import so the module works both as a package and standalone
+from src.data_providers.base_provider import BaseDataProvider
 
 logger = logging.getLogger(__name__)
-
 
 class RealTimeFeatureGenerator:
     """
