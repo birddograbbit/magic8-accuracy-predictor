@@ -9,6 +9,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+import math
 
 from ib_insync import IB, Stock, Index, Option, util
 
@@ -83,11 +84,17 @@ class StandaloneDataProvider(BaseDataProvider):
         if symbol in self._contracts:
             return self._contracts[symbol]
         
-        # Determine contract type
-        if symbol in ['SPX', 'VIX', 'RUT', 'NDX']:
-            contract = Index(symbol, 'CBOE')
+        # Determine contract type based on correct exchanges
+        if symbol == 'SPX':
+            contract = Index('SPX', 'CBOE', 'USD')
+        elif symbol == 'VIX':
+            contract = Index('VIX', 'CBOE', 'USD')
+        elif symbol == 'RUT':
+            contract = Index('RUT', 'RUSSELL', 'USD')  # Russell 2000
+        elif symbol == 'NDX':
+            contract = Index('NDX', 'NASDAQ', 'USD')   # Nasdaq 100
         elif symbol == 'XSP':
-            contract = Index('XSP', 'CBOE')
+            contract = Index('XSP', 'CBOE', 'USD')     # Mini-SPX
         else:
             # Default to stock
             contract = Stock(symbol, 'SMART', 'USD')
@@ -162,13 +169,25 @@ class StandaloneDataProvider(BaseDataProvider):
             
             ticker = self.ib.ticker(contract)
             
+            # Helper function to safely convert to int, handling NaN
+            def safe_int(value):
+                if value is None or (isinstance(value, float) and math.isnan(value)):
+                    return 0
+                return int(value)
+            
+            # Helper function to safely convert to float, handling NaN
+            def safe_float(value):
+                if value is None or (isinstance(value, float) and math.isnan(value)):
+                    return 0.0
+                return float(value)
+            
             return {
                 'symbol': symbol,
-                'last': float(ticker.last or ticker.close or 0),
-                'bid': float(ticker.bid or 0),
-                'ask': float(ticker.ask or 0),
-                'bid_size': int(ticker.bidSize or 0),
-                'ask_size': int(ticker.askSize or 0),
+                'last': safe_float(ticker.last or ticker.close),
+                'bid': safe_float(ticker.bid),
+                'ask': safe_float(ticker.ask),
+                'bid_size': safe_int(ticker.bidSize),
+                'ask_size': safe_int(ticker.askSize),
                 'time': datetime.now().isoformat()
             }
             
