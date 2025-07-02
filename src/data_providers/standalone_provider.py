@@ -11,6 +11,7 @@ import math
 
 from ib_insync import IB, Stock, Index, Option, util
 from src.constants import DEFAULT_IB_PORT
+from src.ib_connection_manager import IBConnectionManager
 
 from .base_provider import BaseDataProvider
 
@@ -32,7 +33,7 @@ class StandaloneDataProvider(BaseDataProvider):
         self.ib_host = ib_host
         self.ib_port = ib_port
         self.client_id = client_id
-        self.ib: Optional[IB] = None
+        self.ib: Optional[IB] = None  # will be obtained from IBConnectionManager
         
         # Contract cache
         self._contracts = {}
@@ -46,72 +47,37 @@ class StandaloneDataProvider(BaseDataProvider):
         )
     
     async def connect(self) -> bool:
-        """Connect to IBKR - simplified version."""
+        """Connect to IBKR using the shared connection manager."""
         try:
-            if self.ib and self.ib.isConnected():
-                logger.info("Already connected to IBKR")
-                return True
-                
-            # Clean up any existing connection
-            if self.ib:
-                try:
-                    self.ib.disconnect()
-                except:
-                    pass
-            
-            # Create new IB instance
-            self.ib = IB()
-            
-            # Set up error handler
+            manager = IBConnectionManager.instance()
+            self.ib = manager.connect(self.ib_host, self.ib_port, self.client_id)
+
             def error_handler(reqId, errorCode, errorString, contract):
-                if errorCode == 354:  # Market data not subscribed
-                    logger.warning(f"Market data not subscribed for {contract.symbol if contract else 'unknown'}")
+                if errorCode == 354:
+                    logger.warning(
+                        f"Market data not subscribed for {contract.symbol if contract else 'unknown'}"
+                    )
                     if contract and hasattr(contract, 'symbol'):
                         self._failed_symbols.add(contract.symbol)
-            
+
             self.ib.errorEvent += error_handler
-            
-            logger.info(f"Connecting to IBKR at {self.ib_host}:{self.ib_port} with clientId={self.client_id}")
-            
-            # Connect and wait a bit for connection to stabilize
-            await self.ib.connectAsync(
-                host=self.ib_host,
-                port=self.ib_port,
-                clientId=self.client_id,
-                timeout=20  # Increased timeout
-            )
-            
-            # Give it a moment to fully establish
-            await asyncio.sleep(1)
-            
-            if self.ib.isConnected():
-                logger.info(f"Successfully connected to IBKR on client_id={self.client_id}")
-                return True
-            else:
-                logger.error("IBKR connection failed")
-                self.ib = None
-                return False
-                
+
+            return self.ib.isConnected()
         except Exception as e:
             logger.error(f"IBKR connection error: {e}")
-            if self.ib:
-                try:
-                    self.ib.disconnect()
-                except:
-                    pass
             self.ib = None
             return False
     
     async def disconnect(self):
         """Disconnect from IBKR."""
-        if self.ib and self.ib.isConnected():
-            self.ib.disconnect()
-            logger.info("Disconnected from IBKR")
+        IBConnectionManager.instance().disconnect()
         self.ib = None
-    
+
     async def is_connected(self) -> bool:
         """Check connection status."""
-        return self.ib is not None and self.ib.isConnected()
+        if self.ib is None:
+            return False
+        return self.ib.isConnected()
     
     def _get_contract(self, symbol: str):
         """Get or create contract for symbol."""

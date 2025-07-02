@@ -195,6 +195,11 @@ magic8-accuracy-predictor/
    ```
    The service will fetch prices from Magic8-Companion when available and fall back to IBKR directly. Data is cached for 5 minutes.
 
+### Simplified IBKR Connection
+All components now share a single IBKR connection managed by `IBConnectionManager`.
+This singleton ensures only one active `IB` instance is used across the project.
+Providers call `IBConnectionManager.instance().get_ib()` to reuse the connection.
+
    **Note**: If you don't have market data subscriptions for certain symbols (e.g., NDX), the system will automatically use mock data for those symbols and continue operating normally.
 
 4. **Monitoring & Feedback**
