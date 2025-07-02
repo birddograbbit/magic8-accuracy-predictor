@@ -19,6 +19,8 @@ import os
 import asyncio
 from contextlib import asynccontextmanager
 
+from .data_manager import DataManager
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,6 +30,7 @@ model = None
 feature_config = None
 feature_names = None
 market_data_cache = {}
+data_manager = None
 
 class TradeRequest(BaseModel):
     """Request model for trade prediction"""
@@ -59,7 +62,7 @@ class PredictionResponse(BaseModel):
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     # Startup
-    global model, feature_config, feature_names
+    global model, feature_config, feature_names, data_manager
     
     # Load model
     model_path = 'models/xgboost_phase1.pkl'
@@ -79,12 +82,29 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning(f"Feature config not found at {feature_config_path}")
     
+    # Initialize data manager
+    data_source_config = {
+        'companion': {
+            'enabled': True,
+            'base_url': 'http://localhost:8765'
+        },
+        'standalone': {
+            'enabled': True,
+            'ib_host': '127.0.0.1',
+            'ib_port': 7497,
+            'client_id': 99
+        }
+    }
+    data_manager = DataManager(data_source_config)
+
     # Start background tasks
     asyncio.create_task(update_market_data())
     
     yield
     
     # Shutdown
+    if data_manager:
+        await data_manager.__aexit__(None, None, None)
     logger.info("Shutting down prediction service")
 
 # Create FastAPI app
@@ -96,32 +116,26 @@ app = FastAPI(
 )
 
 async def update_market_data():
-    """Background task to update market data cache"""
+    """Background task to update market data cache using DataManager."""
+    global data_manager
+    symbols = ['SPX', 'SPY', 'RUT', 'QQQ', 'XSP', 'NDX', 'AAPL', 'TSLA', 'VIX']
     while True:
         try:
-            # In production, this would fetch real market data
-            # For now, simulate with random walk
-            symbols = ['SPX', 'SPY', 'RUT', 'QQQ', 'XSP', 'NDX', 'AAPL', 'TSLA', 'VIX']
-            
-            for symbol in symbols:
-                if symbol not in market_data_cache:
-                    # Initialize with reasonable values
-                    if symbol == 'SPX':
-                        market_data_cache[symbol] = {'price': 5850.0, 'volatility': 0.15}
-                    elif symbol == 'VIX':
-                        market_data_cache[symbol] = {'price': 15.0, 'volatility': 0.30}
-                    else:
-                        market_data_cache[symbol] = {'price': 100.0, 'volatility': 0.20}
-                else:
-                    # Random walk update
-                    current = market_data_cache[symbol]['price']
-                    change = np.random.normal(0, current * 0.001)
-                    market_data_cache[symbol]['price'] = current + change
-                    
+            async with data_manager:
+                for symbol in symbols:
+                    try:
+                        data = await data_manager.get_market_data(symbol)
+                        market_data_cache[symbol] = {
+                            'price': data['price'],
+                            'volatility': data['volatility']
+                        }
+                        logger.debug(f"Updated {symbol}: {data['price']} from {data['source']}")
+                    except Exception as e:
+                        logger.error(f"Failed to update {symbol}: {e}")
         except Exception as e:
-            logger.error(f"Error updating market data: {e}")
-            
-        await asyncio.sleep(60)  # Update every minute
+            logger.error(f"Error in market data update loop: {e}")
+
+        await asyncio.sleep(300)  # Update every 5 minutes
 
 def calculate_features_for_prediction(trade: TradeRequest) -> pd.DataFrame:
     """Calculate features for a single trade prediction"""
