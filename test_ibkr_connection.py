@@ -11,6 +11,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from data_providers.standalone_provider import StandaloneDataProvider
+from constants import DEFAULT_IB_PORT
 
 # Set up logging
 logging.basicConfig(
@@ -23,7 +24,7 @@ async def test_ibkr_connection():
     """Test IBKR connection and data fetching."""
     provider = StandaloneDataProvider(
         ib_host="127.0.0.1",
-        ib_port=7497,
+        ib_port=DEFAULT_IB_PORT,
         client_id=99
     )
     

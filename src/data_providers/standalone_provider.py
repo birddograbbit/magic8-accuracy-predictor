@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Set
 import math
 
 from ib_insync import IB, Stock, Index, Option, util
+from src.constants import DEFAULT_IB_PORT
 
 from .base_provider import BaseDataProvider
 
@@ -29,7 +30,7 @@ class StandaloneDataProvider(BaseDataProvider):
     def __init__(
         self,
         ib_host: str = "127.0.0.1",
-        ib_port: int = 7497,
+        ib_port: int = DEFAULT_IB_PORT,
         client_id: int = 99
     ):
         """Initialize standalone IBKR provider."""

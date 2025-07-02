@@ -67,7 +67,7 @@ python setup_companion_api.py
 ```bash
 # Update config/config.yaml:
 # Change primary: "mock" to primary: "standalone"
-# Make sure IBKR Gateway is running on port 7498
+# Make sure IBKR Gateway is running on port 7497
 ```
 
 ## What Each Script Does

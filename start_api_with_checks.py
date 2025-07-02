@@ -9,6 +9,7 @@ import sys
 import subprocess
 import time
 import socket
+from src.constants import DEFAULT_IB_PORT
 from pathlib import Path
 
 def check_port_available(port):
@@ -20,11 +21,11 @@ def check_port_available(port):
 
 def check_ibkr_gateway():
     """Check if IBKR Gateway is running."""
-    if check_port_available(7497):
-        print("⚠️  IBKR Gateway not detected on port 7497")
+    if check_port_available(DEFAULT_IB_PORT):
+        print(f"⚠️  IBKR Gateway not detected on port {DEFAULT_IB_PORT}")
         print("   Please start IBKR Gateway/TWS first")
         return False
-    print("✓ IBKR Gateway detected on port 7497")
+    print(f"✓ IBKR Gateway detected on port {DEFAULT_IB_PORT}")
     return True
 
 def check_model_file():

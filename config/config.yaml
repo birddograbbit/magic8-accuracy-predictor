@@ -32,7 +32,7 @@ data_source:
   standalone:
     enabled: true
     ib_host: "127.0.0.1"
-    ib_port: 7497  # Different port to avoid conflicts
+    ib_port: 7497  # Default port for IBKR Gateway
     client_id: 99   # Unique client ID
 
 # Prediction configuration
