@@ -183,13 +183,19 @@ magic8-accuracy-predictor/
 1. Ensure IBKR Gateway/TWS is running on port **7497**.
 2. Start the prediction service:
    ```bash
-   python src/prediction_api.py
+   # Recommended - use the startup script
+   python start_prediction_api.py
+   
+   # Alternative - run directly from src
+   cd src && python prediction_api.py
    ```
 3. Verify the API is live:
    ```bash
    curl http://localhost:8000/
    ```
    The service will fetch prices from Magic8-Companion when available and fall back to IBKR directly. Data is cached for 5 minutes.
+
+   **Note**: If you don't have market data subscriptions for certain symbols (e.g., NDX), the system will automatically use mock data for those symbols and continue operating normally.
 
 4. **Monitoring & Feedback**
    - Track prediction accuracy
@@ -203,6 +209,8 @@ magic8-accuracy-predictor/
 - `PHASE1_SUMMARY.md` - Phase 1 implementation details
 - `REALTIME_INTEGRATION_GUIDE.md` - Production system guide
 - `CLEANUP_PLAN.md` - Codebase organization
+- `docs/IBKR_INDEX_FIX.md` - IBKR index contract configuration
+- `docs/MARKET_DATA_SUBSCRIPTIONS.md` - Handling market data subscription errors
 
 ## ⚡ Performance Optimizations
 
@@ -229,9 +237,15 @@ The optimized scripts handle this automatically with batch processing.
 ### Missing IBKR data
 Run `./download_phase1_data.sh` to get all required market data.
 
+### Market Data Subscription Errors
+If you see "Error 354: Requested market data is not subscribed" for symbols like NDX:
+- The system will automatically use mock data for those symbols
+- No manual configuration needed
+- See `docs/MARKET_DATA_SUBSCRIPTIONS.md` for details
+
 ---
 
 **Repository**: https://github.com/birddograbbit/magic8-accuracy-predictor  
-**Last Updated**: July 1, 2025  
+**Last Updated**: July 2, 2025  
 **Phase 1 Status**: ✅ Complete - 88.21% accuracy achieved!  
 **Next Goal**: Real-time prediction system
