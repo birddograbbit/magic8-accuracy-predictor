@@ -1,13 +1,11 @@
 """
-Standalone IBKR data provider for direct connection.
-
-This provider creates its own IBKR connection with a different client ID
-to avoid conflicts. Ship-fast implementation using ib_insync.
+Simplified standalone IBKR data provider.
+Based on working examples - just create one connection and use it.
 """
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Optional, Set
 import math
 
@@ -21,10 +19,7 @@ logger = logging.getLogger(__name__)
 
 class StandaloneDataProvider(BaseDataProvider):
     """
-    Direct IBKR connection provider.
-    
-    Uses a different client ID (default: 99) to avoid conflicts with
-    other systems. Minimal implementation for fast shipping.
+    Direct IBKR connection provider - simplified version.
     """
     
     def __init__(
@@ -45,132 +40,74 @@ class StandaloneDataProvider(BaseDataProvider):
         # Track failed symbols to avoid repeated subscription errors
         self._failed_symbols: Set[str] = set()
         
-        # Connection state
-        self._connecting = False
-        self._connection_lock = asyncio.Lock()
-        
         logger.info(
             f"StandaloneDataProvider initialized: "
             f"{ib_host}:{ib_port}, client_id={client_id}"
         )
     
     async def connect(self) -> bool:
-        """Connect to IBKR with improved stability."""
-        async with self._connection_lock:
-            # Check if already connecting
-            if self._connecting:
-                logger.warning("Connection attempt already in progress")
-                return False
-                
-            # Check if already connected
+        """Connect to IBKR - simplified version."""
+        try:
             if self.ib and self.ib.isConnected():
                 logger.info("Already connected to IBKR")
                 return True
+                
+            # Clean up any existing connection
+            if self.ib:
+                try:
+                    self.ib.disconnect()
+                except:
+                    pass
             
-            self._connecting = True
+            # Create new IB instance
+            self.ib = IB()
             
-            try:
-                # Clean up any existing connection
-                if self.ib:
-                    try:
-                        self.ib.disconnect()
-                    except Exception as e:
-                        logger.debug(f"Error cleaning up old connection: {e}")
-                    self.ib = None
-                
-                # Create new IB instance
-                self.ib = IB()
-                
-                # Set up error handler to catch subscription errors
-                def error_handler(reqId, errorCode, errorString, contract):
-                    if errorCode == 354:  # Market data not subscribed
-                        logger.warning(f"Market data not subscribed for {contract.symbol if contract else 'unknown'}")
-                        if contract and hasattr(contract, 'symbol'):
-                            self._failed_symbols.add(contract.symbol)
-                    elif errorCode == 504:  # Not connected
-                        logger.error("Lost connection to IBKR")
-                
-                self.ib.errorEvent += error_handler
-                
-                # Add connection state handlers
-                def on_connected():
-                    logger.info("IBKR connection established")
-                
-                def on_disconnected():
-                    logger.warning("IBKR connection lost")
-                
-                self.ib.connectedEvent += on_connected
-                self.ib.disconnectedEvent += on_disconnected
-                
-                logger.info(f"Attempting to connect to IBKR at {self.ib_host}:{self.ib_port} with clientId={self.client_id}")
-                
-                # Connect with proper timeout
-                await self.ib.connectAsync(
-                    host=self.ib_host,
-                    port=self.ib_port,
-                    clientId=self.client_id,
-                    timeout=10
-                )
-                
-                # Verify connection is stable
-                await asyncio.sleep(0.5)
-                
-                if self.ib.isConnected():
-                    logger.info(f"Successfully connected to IBKR on client_id={self.client_id}")
-                    return True
-                else:
-                    logger.error("IBKR connection failed - not connected after connect attempt")
-                    if self.ib:
-                        try:
-                            self.ib.disconnect()
-                        except:
-                            pass
-                    self.ib = None
-                    return False
-                    
-            except asyncio.TimeoutError:
-                logger.error(f"Timeout connecting to IBKR on {self.ib_host}:{self.ib_port}")
-                if self.ib:
-                    try:
-                        self.ib.disconnect()
-                    except:
-                        pass
+            # Set up error handler
+            def error_handler(reqId, errorCode, errorString, contract):
+                if errorCode == 354:  # Market data not subscribed
+                    logger.warning(f"Market data not subscribed for {contract.symbol if contract else 'unknown'}")
+                    if contract and hasattr(contract, 'symbol'):
+                        self._failed_symbols.add(contract.symbol)
+            
+            self.ib.errorEvent += error_handler
+            
+            logger.info(f"Connecting to IBKR at {self.ib_host}:{self.ib_port} with clientId={self.client_id}")
+            
+            # Connect and wait a bit for connection to stabilize
+            await self.ib.connectAsync(
+                host=self.ib_host,
+                port=self.ib_port,
+                clientId=self.client_id,
+                timeout=20  # Increased timeout
+            )
+            
+            # Give it a moment to fully establish
+            await asyncio.sleep(1)
+            
+            if self.ib.isConnected():
+                logger.info(f"Successfully connected to IBKR on client_id={self.client_id}")
+                return True
+            else:
+                logger.error("IBKR connection failed")
                 self.ib = None
                 return False
                 
-            except Exception as e:
-                logger.error(f"IBKR connection error: {e}")
-                if self.ib:
-                    try:
-                        self.ib.disconnect()
-                    except:
-                        pass
-                self.ib = None
-                return False
-                
-            finally:
-                self._connecting = False
+        except Exception as e:
+            logger.error(f"IBKR connection error: {e}")
+            if self.ib:
+                try:
+                    self.ib.disconnect()
+                except:
+                    pass
+            self.ib = None
+            return False
     
     async def disconnect(self):
         """Disconnect from IBKR."""
-        async with self._connection_lock:
-            if self.ib and self.ib.isConnected():
-                # Only try to cancel market data if there are active tickers
-                try:
-                    tickers = self.ib.tickers()
-                    if tickers:
-                        for ticker in tickers:
-                            try:
-                                self.ib.cancelMktData(ticker.contract)
-                            except Exception as e:
-                                # Ignore errors when canceling - contract may already be canceled
-                                logger.debug(f"Error canceling market data for {ticker.contract.symbol}: {e}")
-                except Exception as e:
-                    logger.debug(f"Error getting tickers during disconnect: {e}")
-                
-                self.ib.disconnect()
-                self.ib = None
+        if self.ib and self.ib.isConnected():
+            self.ib.disconnect()
             logger.info("Disconnected from IBKR")
+        self.ib = None
     
     async def is_connected(self) -> bool:
         """Check connection status."""
@@ -264,11 +201,11 @@ class StandaloneDataProvider(BaseDataProvider):
         try:
             contract = self._get_contract(symbol)
             
-            # Request market data with a timeout
+            # Request market data
             ticker = self.ib.reqMktData(contract, '', False, False)
             
             # Wait for data with timeout
-            timeout = 2  # seconds
+            timeout = 5  # Increased timeout
             start_time = asyncio.get_event_loop().time()
             
             while (ticker.last is None or math.isnan(ticker.last)) and ticker.close is None:
