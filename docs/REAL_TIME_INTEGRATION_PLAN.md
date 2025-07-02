@@ -40,7 +40,7 @@ python monitor_predictions.py
    - Optional Magic8-Companion integration for filtering
 
 2. **Magic8-Companion**
-   - Centralized IB connection manager (IBConnectionSingleton)
+   - Centralized IB connection manager (`IBConnectionManager`)
    - Provides recommendations based on rules + ML
    - Shares IB connection with MLOptionTrading
    - Runs at scheduled times (10:30, 11:00, 12:30, 14:45 ET)
@@ -88,8 +88,8 @@ Magic8-Companion will serve as the central IBKR connection manager, distributing
     ┌─────────────────────────────────────┐
     │       Magic8-Companion              │
     │  ┌─────────────────────────────┐   │
-    │  │ IBConnectionSingleton       │   │
-    │  │ (Central IBKR Connection)   │   │
+    │  │ IBConnectionManager        │   │
+    │  │ (Central IBKR Connection)  │   │
     │  └──────────┬─────────────────┘   │
     │             │                      │
     │  ┌──────────▼─────────────────┐   │

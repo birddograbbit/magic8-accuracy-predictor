@@ -194,7 +194,7 @@ For the most accurate predictions, integrate real-time market data:
 ### Using IBKR (requires TWS/Gateway)
 
 ```python
-from src.realtime_predictor import Magic8Predictor
+from src.real_time_predictor import Magic8Predictor
 
 # Initialize predictor
 predictor = Magic8Predictor()
