@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Entry point for Magic8 Prediction API
-Runs the API as a module to ensure proper package imports
+Entry point for Magic8 Prediction API.
+Runs the API with uvicorn so reload and workers operate correctly.
 """
 
 import subprocess
@@ -9,13 +9,13 @@ import sys
 import os
 
 def main():
-    """Run the prediction API as a module."""
+    """Run the prediction API using uvicorn."""
     # Ensure we're in the project root directory
     project_root = os.path.dirname(os.path.abspath(__file__))
     os.chdir(project_root)
     
-    # Run the API using -m flag to properly handle package imports
-    cmd = [sys.executable, "-m", "src.prediction_api"]
+    # Run the API using uvicorn with module path
+    cmd = [sys.executable, "-m", "uvicorn", "src.prediction_api:app", "--reload"]
     
     try:
         subprocess.run(cmd, check=True)

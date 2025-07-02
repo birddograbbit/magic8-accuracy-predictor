@@ -443,11 +443,11 @@ async def get_feature_importance():
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     # Run the FastAPI server
-    # Use __name__ to get the correct module path
+    # Use module path so reload works correctly
     uvicorn.run(
-        app,  # Direct reference to the app object
+        "src.prediction_api:app",  # Import string required for --reload
         host="0.0.0.0",
         port=8000,
         reload=True,

@@ -100,8 +100,14 @@ def main():
     
     # Start the API
     try:
-        # Run as a module to ensure proper imports
-        subprocess.run([sys.executable, "-m", "src.prediction_api"], check=True)
+        # Launch uvicorn with module path for reload support
+        subprocess.run([
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "src.prediction_api:app",
+            "--reload",
+        ], check=True)
     except KeyboardInterrupt:
         print("\n\nAPI stopped by user")
     except subprocess.CalledProcessError as e:
