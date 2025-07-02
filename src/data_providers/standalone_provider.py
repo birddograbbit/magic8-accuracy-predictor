@@ -8,7 +8,7 @@ to avoid conflicts. Ship-fast implementation using ib_insync.
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 import math
 
 from ib_insync import IB, Stock, Index, Option, util
@@ -41,6 +41,9 @@ class StandaloneDataProvider(BaseDataProvider):
         # Contract cache
         self._contracts = {}
         
+        # Track failed symbols to avoid repeated subscription errors
+        self._failed_symbols: Set[str] = set()
+        
         logger.info(
             f"StandaloneDataProvider initialized: "
             f"{ib_host}:{ib_port}, client_id={client_id}"
@@ -50,6 +53,16 @@ class StandaloneDataProvider(BaseDataProvider):
         """Connect to IBKR."""
         try:
             self.ib = IB()
+            
+            # Set up error handler to catch subscription errors
+            def error_handler(reqId, errorCode, errorString, contract):
+                if errorCode == 354:  # Market data not subscribed
+                    logger.warning(f"Market data not subscribed for {contract.symbol if contract else 'unknown'}")
+                    if contract and hasattr(contract, 'symbol'):
+                        self._failed_symbols.add(contract.symbol)
+            
+            self.ib.errorEvent += error_handler
+            
             await self.ib.connectAsync(
                 host=self.ib_host,
                 port=self.ib_port,
@@ -70,7 +83,11 @@ class StandaloneDataProvider(BaseDataProvider):
     
     async def disconnect(self):
         """Disconnect from IBKR."""
-        if self.ib:
+        if self.ib and self.ib.isConnected():
+            # Cancel all market data subscriptions before disconnecting
+            for ticker in self.ib.tickers():
+                self.ib.cancelMktData(ticker.contract)
+            
             self.ib.disconnect()
             self.ib = None
         logger.info("Disconnected from IBKR")
@@ -113,6 +130,11 @@ class StandaloneDataProvider(BaseDataProvider):
             logger.error("Not connected to IBKR")
             return []
         
+        # Skip if we know this symbol has subscription issues
+        if symbol in self._failed_symbols:
+            logger.debug(f"Skipping {symbol} - known subscription failure")
+            return []
+        
         try:
             contract = self._get_contract(symbol)
             
@@ -142,32 +164,47 @@ class StandaloneDataProvider(BaseDataProvider):
             return formatted_bars
             
         except Exception as e:
-            logger.error(f"Error getting price data for {symbol}: {e}")
+            error_msg = str(e)
+            if "market data is not subscribed" in error_msg.lower() or "error 354" in error_msg.lower():
+                logger.warning(f"Market data subscription missing for {symbol}")
+                self._failed_symbols.add(symbol)
+            else:
+                logger.error(f"Error getting price data for {symbol}: {e}")
             return []
     
     async def get_current_price(self, symbol: str) -> Dict:
         """Get current price from IBKR."""
         if not await self.is_connected():
-            return {
-                'symbol': symbol,
-                'last': 0,
-                'bid': 0,
-                'ask': 0,
-                'bid_size': 0,
-                'ask_size': 0,
-                'time': datetime.now().isoformat()
-            }
+            raise Exception("Not connected to IBKR")
+        
+        # Skip if we know this symbol has subscription issues
+        if symbol in self._failed_symbols:
+            raise Exception(f"Market data subscription missing for {symbol}")
         
         try:
             contract = self._get_contract(symbol)
             
-            # Request market data
-            self.ib.reqMktData(contract, '', False, False)
+            # Request market data with a timeout
+            ticker = self.ib.reqMktData(contract, '', False, False)
             
-            # Wait for data
-            await asyncio.sleep(1)
+            # Wait for data with timeout
+            timeout = 2  # seconds
+            start_time = asyncio.get_event_loop().time()
             
-            ticker = self.ib.ticker(contract)
+            while (ticker.last is None or math.isnan(ticker.last)) and ticker.close is None:
+                await asyncio.sleep(0.1)
+                if asyncio.get_event_loop().time() - start_time > timeout:
+                    # Cancel the market data request
+                    self.ib.cancelMktData(contract)
+                    
+                    # Check if it's a subscription error
+                    if symbol in self._failed_symbols:
+                        raise Exception(f"Market data subscription missing for {symbol}")
+                    else:
+                        raise Exception(f"Timeout waiting for market data for {symbol}")
+            
+            # Cancel market data request after getting the data
+            self.ib.cancelMktData(contract)
             
             # Helper function to safely convert to int, handling NaN
             def safe_int(value):
@@ -192,30 +229,33 @@ class StandaloneDataProvider(BaseDataProvider):
             }
             
         except Exception as e:
-            logger.error(f"Error getting current price for {symbol}: {e}")
-            return {
-                'symbol': symbol,
-                'last': 0,
-                'bid': 0,
-                'ask': 0,
-                'bid_size': 0,
-                'ask_size': 0,
-                'time': datetime.now().isoformat()
-            }
+            # Re-raise the exception to be handled by DataManager
+            raise e
     
     async def get_vix_data(self) -> Dict:
         """Get VIX data from IBKR."""
-        vix_quote = await self.get_current_price('VIX')
-        
-        # Calculate change (simplified - would need previous close)
-        return {
-            'last': vix_quote['last'],
-            'change': 0,  # TODO: Calculate from previous close
-            'change_pct': 0,
-            'high': vix_quote['last'],  # TODO: Get daily high/low
-            'low': vix_quote['last'],
-            'time': vix_quote['time']
-        }
+        try:
+            vix_quote = await self.get_current_price('VIX')
+            
+            # Calculate change (simplified - would need previous close)
+            return {
+                'last': vix_quote['last'],
+                'change': 0,  # TODO: Calculate from previous close
+                'change_pct': 0,
+                'high': vix_quote['last'],  # TODO: Get daily high/low
+                'low': vix_quote['last'],
+                'time': vix_quote['time']
+            }
+        except Exception as e:
+            logger.error(f"Error getting VIX data: {e}")
+            return {
+                'last': 15.0,  # Default VIX
+                'change': 0,
+                'change_pct': 0,
+                'high': 15.0,
+                'low': 15.0,
+                'time': datetime.now().isoformat()
+            }
     
     async def get_option_chain(
         self,
