@@ -84,9 +84,18 @@ class StandaloneDataProvider(BaseDataProvider):
     async def disconnect(self):
         """Disconnect from IBKR."""
         if self.ib and self.ib.isConnected():
-            # Cancel all market data subscriptions before disconnecting
-            for ticker in self.ib.tickers():
-                self.ib.cancelMktData(ticker.contract)
+            # Only try to cancel market data if there are active tickers
+            try:
+                tickers = self.ib.tickers()
+                if tickers:
+                    for ticker in tickers:
+                        try:
+                            self.ib.cancelMktData(ticker.contract)
+                        except Exception as e:
+                            # Ignore errors when canceling - contract may already be canceled
+                            logger.debug(f"Error canceling market data for {ticker.contract.symbol}: {e}")
+            except Exception as e:
+                logger.debug(f"Error getting tickers during disconnect: {e}")
             
             self.ib.disconnect()
             self.ib = None
@@ -195,7 +204,7 @@ class StandaloneDataProvider(BaseDataProvider):
                 await asyncio.sleep(0.1)
                 if asyncio.get_event_loop().time() - start_time > timeout:
                     # Cancel the market data request
-                    self.ib.cancelMktData(contract)
+                    self.ib.cancelMktData(ticker)
                     
                     # Check if it's a subscription error
                     if symbol in self._failed_symbols:
@@ -204,7 +213,7 @@ class StandaloneDataProvider(BaseDataProvider):
                         raise Exception(f"Timeout waiting for market data for {symbol}")
             
             # Cancel market data request after getting the data
-            self.ib.cancelMktData(contract)
+            self.ib.cancelMktData(ticker)
             
             # Helper function to safely convert to int, handling NaN
             def safe_int(value):

@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
     global model, feature_config, feature_names, data_manager
     
     # Load model
-    model_path = 'models/xgboost_phase1.pkl'
+    model_path = 'models/xgboost_phase1_model.pkl'  # Fixed: added _model suffix
     if os.path.exists(model_path):
         model = joblib.load(model_path)
         logger.info(f"Loaded model from {model_path}")
