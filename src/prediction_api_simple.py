@@ -17,6 +17,7 @@ import os
 import time
 import threading
 import math
+import asyncio
 
 # IB imports
 from ib_insync import IB, Stock, Index, util
@@ -78,19 +79,27 @@ app = FastAPI(
     version="3.0.0"
 )
 
-def connect_ib():
-    """Connect to IB Gateway - simple like the sample scripts."""
+def connect_ib_sync():
+    """Connect to IB Gateway - handle async properly in thread."""
     global ib, ib_connected
     
     try:
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         ib = IB()
         logger.info("Connecting to IB Gateway on port 7497...")
-        ib.connect('127.0.0.1', 7497, clientId=99)
         
-        # Wait a moment for connection to stabilize
-        time.sleep(0.5)
+        # Use util.run to handle the connection properly
+        def do_connect():
+            ib.connect('127.0.0.1', 7497, clientId=99)
+            return ib.isConnected()
         
-        if ib.isConnected():
+        # Run the connection
+        connected = util.run(do_connect)
+        
+        if connected:
             ib_connected = True
             logger.info("✓ Connected to IB Gateway")
             return True
@@ -224,7 +233,7 @@ def startup_event():
     
     # Try to connect to IB in a separate thread to avoid event loop issues
     def connect_thread():
-        connect_ib()
+        connect_ib_sync()
     
     thread = threading.Thread(target=connect_thread)
     thread.start()
