@@ -5,6 +5,7 @@ Just like your sample scripts.
 """
 
 import time
+import math
 from ib_insync import IB, Stock, Index
 
 def test_ib_connection():
@@ -39,20 +40,21 @@ def test_ib_connection():
         price = None
         
         while time.time() - start_time < timeout:
-            if ticker.last:
+            if ticker.last and not math.isnan(ticker.last):
                 price = ticker.last
                 break
-            elif ticker.close:
+            elif ticker.close and not math.isnan(ticker.close):
                 price = ticker.close
                 break
             time.sleep(0.1)
         
+        # Make sure to cancel before checking price
         ib.cancelMktData(ticker)
         
-        if price:
+        if price and not math.isnan(price):
             print(f"✓ SPX price: ${price:.2f}")
         else:
-            print("✗ Could not get SPX price")
+            print("✗ Could not get valid SPX price (market may be closed)")
         
         # Disconnect
         print("\nDisconnecting...")
