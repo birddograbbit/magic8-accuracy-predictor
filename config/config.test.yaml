@@ -27,7 +27,7 @@ data_source:
   standalone:
     enabled: false
     ib_host: "127.0.0.1"
-    ib_port: 7498
+    ib_port: 7497
     client_id: 99
 
 # Prediction configuration

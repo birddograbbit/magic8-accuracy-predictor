@@ -341,7 +341,7 @@ data_source:
   
   standalone:
     enabled: true
-    ib_port: 7498  # Different from other connections
+    ib_port: 7497  # Different from other connections
     client_id: 99
 ```
 
