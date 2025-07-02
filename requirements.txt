@@ -30,7 +30,7 @@ aioredis>=2.0.0  # For async Redis support
 pydantic>=2.4.0
 
 # Interactive brokers (optional, for standalone provider)
-# ib-insync>=0.9.86  # Uncomment if using standalone IB connection
+ib_insync>=0.9.70
 
 # Visualization and monitoring
 matplotlib>=3.7.0

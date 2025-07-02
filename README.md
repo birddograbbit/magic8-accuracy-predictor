@@ -175,9 +175,21 @@ magic8-accuracy-predictor/
    python -m magic8_companion
    ```
 3. Verify the API is running:
+ ```bash
+  curl http://localhost:8765/health
+  ```
+
+### Starting the Prediction API with IBKR Fallback
+1. Ensure IBKR Gateway/TWS is running on port **7497**.
+2. Start the prediction service:
    ```bash
-   curl http://localhost:8765/health
+   python src/prediction_api.py
    ```
+3. Verify the API is live:
+   ```bash
+   curl http://localhost:8000/
+   ```
+   The service will fetch prices from Magic8-Companion when available and fall back to IBKR directly. Data is cached for 5 minutes.
 
 4. **Monitoring & Feedback**
    - Track prediction accuracy
