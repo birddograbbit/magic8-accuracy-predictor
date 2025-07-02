@@ -29,18 +29,71 @@ class DataManager:
         self._ib_provider: Optional[StandaloneDataProvider] = None
         self._companion_session: Optional[aiohttp.ClientSession] = None
         self._subscription_failures: Dict[str, bool] = {}  # Track subscription failures
+        self._ib_connected = False  # Track IB connection status
 
     async def __aenter__(self):
+        """Initialize connections on context manager entry."""
+        # Create companion session
         self._companion_session = aiohttp.ClientSession()
+        
+        # Initialize and connect IB provider if enabled
+        if self.use_standalone:
+            await self._ensure_ib_connected()
+        
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Cleanup connections on context manager exit."""
+        # Close companion session
         if self._companion_session:
             await self._companion_session.close()
             self._companion_session = None
+            
+        # Disconnect IB provider
         if self._ib_provider:
-            await self._ib_provider.disconnect()
-            self._ib_provider = None
+            try:
+                await self._ib_provider.disconnect()
+                logger.info("IB provider disconnected")
+            except Exception as e:
+                logger.error(f"Error disconnecting IB provider: {e}")
+            finally:
+                self._ib_provider = None
+                self._ib_connected = False
+
+    async def _ensure_ib_connected(self):
+        """Ensure IB provider is connected."""
+        if self._ib_connected and self._ib_provider:
+            # Check if still connected
+            if await self._ib_provider.is_connected():
+                return
+            else:
+                logger.warning("IB connection lost, attempting reconnect...")
+                self._ib_connected = False
+        
+        # Create provider if needed
+        if not self._ib_provider:
+            conf = self.config.get("standalone", {})
+            self._ib_provider = StandaloneDataProvider(
+                ib_host=conf.get("ib_host", "127.0.0.1"),
+                ib_port=conf.get("ib_port", DEFAULT_IB_PORT),
+                client_id=conf.get("client_id", 99),
+            )
+            logger.info("Created IB provider instance")
+        
+        # Connect if not connected
+        if not self._ib_connected:
+            try:
+                connected = await self._ib_provider.connect()
+                if connected:
+                    self._ib_connected = True
+                    logger.info("IB provider connected successfully")
+                else:
+                    raise Exception("Failed to connect to IBKR")
+            except Exception as e:
+                logger.error(f"Failed to connect IB provider: {e}")
+                # Don't set _ib_provider to None here - keep it for retry
+                self._ib_connected = False
+                raise
 
     def _is_cache_valid(self, key: str) -> bool:
         if key not in self.cache:
@@ -111,16 +164,9 @@ class DataManager:
             }
 
     async def _fetch_from_ibkr(self, symbol: str) -> Dict[str, Any]:
-        if not self._ib_provider:
-            conf = self.config.get("standalone", {})
-            self._ib_provider = StandaloneDataProvider(
-                ib_host=conf.get("ib_host", "127.0.0.1"),
-                ib_port=conf.get("ib_port", DEFAULT_IB_PORT),
-                client_id=conf.get("client_id", 99),
-            )
-            connected = await self._ib_provider.connect()
-            if not connected:
-                raise Exception("Failed to connect to IBKR")
+        """Fetch data from IBKR, ensuring connection persists."""
+        # Ensure we're connected
+        await self._ensure_ib_connected()
 
         try:
             price_data = await self._ib_provider.get_current_price(symbol)
@@ -144,6 +190,10 @@ class DataManager:
                 "source": "ibkr",
             }
         except Exception as e:
+            # Check if connection was lost
+            if not await self._ib_provider.is_connected():
+                logger.warning("IB connection lost during data fetch")
+                self._ib_connected = False
             # Re-raise with original error for proper handling upstream
             raise e
 
