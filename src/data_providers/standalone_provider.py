@@ -29,7 +29,7 @@ class StandaloneDataProvider(BaseDataProvider):
     def __init__(
         self,
         ib_host: str = "127.0.0.1",
-        ib_port: int = 7498,
+        ib_port: int = 7497,
         client_id: int = 99
     ):
         """Initialize standalone IBKR provider."""
