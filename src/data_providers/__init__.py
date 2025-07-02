@@ -14,6 +14,7 @@ from .companion_provider import CompanionDataProvider
 from .redis_provider import RedisDataProvider
 from .standalone_provider import StandaloneDataProvider
 from .mock_provider import MockDataProvider
+from src.constants import DEFAULT_IB_PORT
 
 __all__ = [
     'BaseDataProvider',
@@ -76,7 +77,7 @@ def _create_provider(provider_type: str, config: dict) -> BaseDataProvider:
     elif provider_type == 'standalone':
         return StandaloneDataProvider(
             ib_host=provider_config.get('ib_host', '127.0.0.1'),
-            ib_port=provider_config.get('ib_port', 7498),
+            ib_port=provider_config.get('ib_port', DEFAULT_IB_PORT),
             client_id=provider_config.get('client_id', 99)
         )
     

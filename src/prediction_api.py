@@ -20,6 +20,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from .data_manager import DataManager
+from src.constants import DEFAULT_IB_PORT
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -92,7 +93,7 @@ async def lifespan(app: FastAPI):
         'standalone': {
             'enabled': True,
             'ib_host': '127.0.0.1',
-            'ib_port': 7497,
+            'ib_port': DEFAULT_IB_PORT,
             'client_id': 99
         }
     }

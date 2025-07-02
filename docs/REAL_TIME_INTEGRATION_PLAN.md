@@ -501,10 +501,10 @@ prediction:
 
 1. Use Magic8-Companion as primary data source
 2. Ensure unique client IDs for each connection
-3. Use different ports for multiple gateways:
+3. Use the default IBKR Gateway port across services:
    - Magic8-Companion: 7497
-   - Standalone predictor: 7498
-   - DiscordTrading: 7496
+   - Standalone predictor: 7497
+   - DiscordTrading: 7497
 
 ### Maintenance
 

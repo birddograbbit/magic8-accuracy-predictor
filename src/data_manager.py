@@ -12,6 +12,7 @@ import aiohttp
 import numpy as np
 
 from .data_providers.standalone_provider import StandaloneDataProvider
+from src.constants import DEFAULT_IB_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ class DataManager:
             conf = self.config.get("standalone", {})
             self._ib_provider = StandaloneDataProvider(
                 ib_host=conf.get("ib_host", "127.0.0.1"),
-                ib_port=conf.get("ib_port", 7497),
+                ib_port=conf.get("ib_port", DEFAULT_IB_PORT),
                 client_id=conf.get("client_id", 99),
             )
             connected = await self._ib_provider.connect()

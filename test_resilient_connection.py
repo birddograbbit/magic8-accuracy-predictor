@@ -6,6 +6,7 @@ Test the resilient IBKR connection with NDX subscription error handling.
 import asyncio
 import logging
 from src.data_manager import DataManager
+from src.constants import DEFAULT_IB_PORT
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,7 +24,7 @@ async def test_resilient_connection():
         'standalone': {
             'enabled': True,
             'ib_host': '127.0.0.1',
-            'ib_port': 7497,
+            'ib_port': DEFAULT_IB_PORT,
             'client_id': 99
         }
     }

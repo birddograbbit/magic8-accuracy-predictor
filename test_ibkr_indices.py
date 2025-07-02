@@ -7,6 +7,7 @@ Run this to ensure the StandaloneDataProvider works correctly with all indices.
 import asyncio
 import logging
 from src.data_providers.standalone_provider import StandaloneDataProvider
+from src.constants import DEFAULT_IB_PORT
 
 # Configure logging
 logging.basicConfig(
@@ -20,7 +21,7 @@ async def test_index_contracts():
     # Initialize provider
     provider = StandaloneDataProvider(
         ib_host="127.0.0.1",
-        ib_port=7497,
+        ib_port=DEFAULT_IB_PORT,
         client_id=99
     )
     
