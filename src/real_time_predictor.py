@@ -18,17 +18,10 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 
-# Use absolute imports for standalone execution compatibility
-try:
-    # Try relative import first (when used as package)
-    from .models.model_wrappers import XGBoostModelWrapper
-    from .feature_engineering import RealTimeFeatureGenerator
-    from .data_providers import get_data_provider
-except ImportError:
-    # Fall back to absolute imports (when used standalone)
-    from src.models.model_wrappers import XGBoostModelWrapper
-    from src.feature_engineering import RealTimeFeatureGenerator
-    from src.data_providers import get_data_provider
+# Use relative imports for local modules
+from .models.model_wrappers import XGBoostModelWrapper
+from .feature_engineering import RealTimeFeatureGenerator
+from .data_providers import get_data_provider
 
 logger = logging.getLogger(__name__)
 

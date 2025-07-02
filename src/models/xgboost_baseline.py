@@ -25,7 +25,7 @@ import shutil
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Import the model wrapper
-from src.models.model_wrappers import XGBoostModelWrapper
+from .model_wrappers import XGBoostModelWrapper
 
 class XGBoostBaseline:
     def __init__(self, config_path=None):

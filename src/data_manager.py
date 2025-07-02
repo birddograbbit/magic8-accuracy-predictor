@@ -11,7 +11,7 @@ from typing import Dict, Optional, Any
 import aiohttp
 import numpy as np
 
-from data_providers.standalone_provider import StandaloneDataProvider
+from .data_providers.standalone_provider import StandaloneDataProvider
 
 logger = logging.getLogger(__name__)
 
