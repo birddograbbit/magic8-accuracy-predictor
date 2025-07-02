@@ -7,7 +7,7 @@ Provides REST API for real-time trade predictions
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Set
 import pandas as pd
 import numpy as np
 import xgboost as xgb
@@ -19,7 +19,7 @@ import os
 import asyncio
 from contextlib import asynccontextmanager
 
-from data_manager import DataManager
+from .data_manager import DataManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +31,7 @@ feature_config = None
 feature_names = None
 market_data_cache = {}
 data_manager = None
+failed_symbols: Set[str] = set()  # Track symbols that fail to update
 
 class TradeRequest(BaseModel):
     """Request model for trade prediction"""
@@ -117,24 +118,62 @@ app = FastAPI(
 
 async def update_market_data():
     """Background task to update market data cache using DataManager."""
-    global data_manager
+    global data_manager, failed_symbols
     symbols = ['SPX', 'SPY', 'RUT', 'QQQ', 'XSP', 'NDX', 'AAPL', 'TSLA', 'VIX']
+    
+    # Initialize with mock data for all symbols
+    for symbol in symbols:
+        if symbol not in market_data_cache:
+            market_data_cache[symbol] = {
+                'price': 100.0,  # Default price
+                'volatility': 0.20,  # Default volatility
+                'source': 'mock'
+            }
+    
+    failure_counts = {}  # Track consecutive failures per symbol
+    
     while True:
         try:
             async with data_manager:
                 for symbol in symbols:
+                    # Skip symbols that have failed too many times
+                    if symbol in failed_symbols:
+                        continue
+                        
                     try:
                         data = await data_manager.get_market_data(symbol)
                         market_data_cache[symbol] = {
                             'price': data['price'],
-                            'volatility': data['volatility']
+                            'volatility': data['volatility'],
+                            'source': data['source']
                         }
+                        # Reset failure count on success
+                        failure_counts[symbol] = 0
                         logger.debug(f"Updated {symbol}: {data['price']} from {data['source']}")
                     except Exception as e:
-                        logger.error(f"Failed to update {symbol}: {e}")
+                        error_msg = str(e)
+                        # Check if it's a subscription error
+                        if "market data is not subscribed" in error_msg.lower() or "error 354" in error_msg.lower():
+                            logger.warning(f"Market data subscription missing for {symbol}, using mock data")
+                            failed_symbols.add(symbol)
+                            # Keep the mock data in cache
+                        else:
+                            # Other errors - increment failure count
+                            failure_counts[symbol] = failure_counts.get(symbol, 0) + 1
+                            if failure_counts[symbol] >= 3:
+                                logger.error(f"Symbol {symbol} failed {failure_counts[symbol]} times, marking as failed")
+                                failed_symbols.add(symbol)
+                            else:
+                                logger.warning(f"Failed to update {symbol} (attempt {failure_counts[symbol]}): {e}")
+                        
         except Exception as e:
             logger.error(f"Error in market data update loop: {e}")
+            # Don't crash the entire loop - continue with cached data
 
+        # Log status periodically
+        if failed_symbols:
+            logger.info(f"Using mock data for symbols without subscriptions: {sorted(failed_symbols)}")
+        
         await asyncio.sleep(300)  # Update every 5 minutes
 
 def calculate_features_for_prediction(trade: TradeRequest) -> pd.DataFrame:
@@ -293,7 +332,12 @@ async def root():
         "status": "running",
         "model_loaded": model is not None,
         "features_loaded": feature_names is not None,
-        "market_data_symbols": list(market_data_cache.keys())
+        "market_data_symbols": list(market_data_cache.keys()),
+        "failed_symbols": list(failed_symbols),
+        "data_sources": {
+            symbol: data.get('source', 'unknown') 
+            for symbol, data in market_data_cache.items()
+        }
     }
 
 @app.post("/predict", response_model=PredictionResponse)
@@ -370,9 +414,12 @@ async def get_market_data(symbol: str):
     if symbol not in market_data_cache:
         raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
     
+    data = market_data_cache[symbol]
+    
     return {
         "symbol": symbol,
-        "data": market_data_cache[symbol],
+        "data": data,
+        "is_failed": symbol in failed_symbols,
         "timestamp": datetime.now().isoformat()
     }
 
