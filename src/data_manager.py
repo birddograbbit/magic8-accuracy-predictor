@@ -27,6 +27,7 @@ class DataManager:
         self.use_standalone = config.get("standalone", {}).get("enabled", True)
         self._ib_provider: Optional[StandaloneDataProvider] = None
         self._companion_session: Optional[aiohttp.ClientSession] = None
+        self._subscription_failures: Dict[str, bool] = {}  # Track subscription failures
 
     async def __aenter__(self):
         self._companion_session = aiohttp.ClientSession()
@@ -54,6 +55,9 @@ class DataManager:
             logger.debug("Using cached data for %s", symbol)
             return self.cache[key]["data"]
 
+        # Skip IBKR if we know this symbol has subscription issues
+        skip_ibkr = self._subscription_failures.get(symbol, False)
+
         # try companion
         try:
             data = await self._fetch_from_companion(symbol)
@@ -62,15 +66,34 @@ class DataManager:
         except Exception as e:
             logger.debug("Companion fetch failed for %s: %s", symbol, e)
 
-        if self.use_standalone:
+        if self.use_standalone and not skip_ibkr:
             try:
                 data = await self._fetch_from_ibkr(symbol)
                 self._update_cache(key, data)
+                # Clear subscription failure flag on success
+                self._subscription_failures[symbol] = False
                 return data
             except Exception as e:
-                logger.warning("IBKR fetch failed for %s: %s", symbol, e)
+                error_msg = str(e)
+                # Check if it's a subscription error
+                if self._is_subscription_error(error_msg):
+                    logger.warning(f"Market data subscription missing for {symbol}, will use mock data")
+                    self._subscription_failures[symbol] = True
+                else:
+                    logger.warning("IBKR fetch failed for %s: %s", symbol, e)
 
         return self._get_mock_data(symbol)
+
+    def _is_subscription_error(self, error_msg: str) -> bool:
+        """Check if the error is due to missing market data subscription."""
+        subscription_errors = [
+            "market data is not subscribed",
+            "error 354",
+            "requested market data is not subscribed",
+            "delayed market data is available"
+        ]
+        error_lower = error_msg.lower()
+        return any(err in error_lower for err in subscription_errors)
 
     async def _fetch_from_companion(self, symbol: str) -> Dict[str, Any]:
         if not self._companion_session:
@@ -98,23 +121,30 @@ class DataManager:
             if not connected:
                 raise Exception("Failed to connect to IBKR")
 
-        price_data = await self._ib_provider.get_current_price(symbol)
-        volatility = 0.20
         try:
-            bars = await self._ib_provider.get_price_data(symbol, bars=20, interval="5 mins")
-            if bars:
-                closes = [bar["close"] for bar in bars]
-                if len(closes) > 1:
-                    rets = [(closes[i] - closes[i - 1]) / closes[i - 1] for i in range(1, len(closes))]
-                    volatility = float(np.std(rets) * np.sqrt(252 * 78))
-        except Exception as e:
-            logger.debug("Volatility calc failed: %s", e)
+            price_data = await self._ib_provider.get_current_price(symbol)
+            volatility = 0.20
+            
+            # Only try to get volatility if we got a valid price
+            if price_data.get("last", 0) > 0:
+                try:
+                    bars = await self._ib_provider.get_price_data(symbol, bars=20, interval="5 mins")
+                    if bars:
+                        closes = [bar["close"] for bar in bars]
+                        if len(closes) > 1:
+                            rets = [(closes[i] - closes[i - 1]) / closes[i - 1] for i in range(1, len(closes))]
+                            volatility = float(np.std(rets) * np.sqrt(252 * 78))
+                except Exception as e:
+                    logger.debug("Volatility calc failed: %s", e)
 
-        return {
-            "price": price_data.get("last", 0.0),
-            "volatility": volatility,
-            "source": "ibkr",
-        }
+            return {
+                "price": price_data.get("last", 0.0),
+                "volatility": volatility,
+                "source": "ibkr",
+            }
+        except Exception as e:
+            # Re-raise with original error for proper handling upstream
+            raise e
 
     def _get_mock_data(self, symbol: str) -> Dict[str, Any]:
         mock_prices = {
