@@ -33,6 +33,7 @@ feature_names = None
 market_data_cache = {}
 data_manager = None
 failed_symbols: Set[str] = set()  # Track symbols that fail to update
+background_task = None  # Track background task
 
 class TradeRequest(BaseModel):
     """Request model for trade prediction"""
@@ -64,7 +65,7 @@ class PredictionResponse(BaseModel):
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     # Startup
-    global model, feature_config, feature_names, data_manager
+    global model, feature_config, feature_names, data_manager, background_task
     
     # Load model
     model_path = 'models/xgboost_phase1_model.pkl'  # Fixed: added _model suffix
@@ -97,17 +98,37 @@ async def lifespan(app: FastAPI):
             'client_id': 99
         }
     }
+    
+    # Create data manager instance
     data_manager = DataManager(data_source_config)
+    
+    # Connect to data sources during startup
+    await data_manager.__aenter__()
+    logger.info("Data manager initialized and connected")
 
     # Start background tasks
-    asyncio.create_task(update_market_data())
+    background_task = asyncio.create_task(update_market_data())
+    logger.info("Started background market data updates")
     
     yield
     
     # Shutdown
+    logger.info("Shutting down prediction service...")
+    
+    # Cancel background task
+    if background_task and not background_task.done():
+        background_task.cancel()
+        try:
+            await background_task
+        except asyncio.CancelledError:
+            logger.info("Background task cancelled")
+    
+    # Properly disconnect data manager
     if data_manager:
         await data_manager.__aexit__(None, None, None)
-    logger.info("Shutting down prediction service")
+        logger.info("Data manager disconnected")
+    
+    logger.info("Shutdown complete")
 
 # Create FastAPI app
 app = FastAPI(
@@ -135,38 +156,42 @@ async def update_market_data():
     
     while True:
         try:
-            async with data_manager:
-                for symbol in symbols:
-                    # Skip symbols that have failed too many times
-                    if symbol in failed_symbols:
-                        continue
-                        
-                    try:
-                        data = await data_manager.get_market_data(symbol)
-                        market_data_cache[symbol] = {
-                            'price': data['price'],
-                            'volatility': data['volatility'],
-                            'source': data['source']
-                        }
-                        # Reset failure count on success
-                        failure_counts[symbol] = 0
-                        logger.debug(f"Updated {symbol}: {data['price']} from {data['source']}")
-                    except Exception as e:
-                        error_msg = str(e)
-                        # Check if it's a subscription error
-                        if "market data is not subscribed" in error_msg.lower() or "error 354" in error_msg.lower():
-                            logger.warning(f"Market data subscription missing for {symbol}, using mock data")
+            # Do NOT use 'async with' here - it will disconnect the provider
+            # The data manager is already connected from startup
+            for symbol in symbols:
+                # Skip symbols that have failed too many times
+                if symbol in failed_symbols:
+                    continue
+                    
+                try:
+                    data = await data_manager.get_market_data(symbol)
+                    market_data_cache[symbol] = {
+                        'price': data['price'],
+                        'volatility': data['volatility'],
+                        'source': data['source']
+                    }
+                    # Reset failure count on success
+                    failure_counts[symbol] = 0
+                    logger.debug(f"Updated {symbol}: {data['price']} from {data['source']}")
+                except Exception as e:
+                    error_msg = str(e)
+                    # Check if it's a subscription error
+                    if "market data is not subscribed" in error_msg.lower() or "error 354" in error_msg.lower():
+                        logger.warning(f"Market data subscription missing for {symbol}, using mock data")
+                        failed_symbols.add(symbol)
+                        # Keep the mock data in cache
+                    else:
+                        # Other errors - increment failure count
+                        failure_counts[symbol] = failure_counts.get(symbol, 0) + 1
+                        if failure_counts[symbol] >= 3:
+                            logger.error(f"Symbol {symbol} failed {failure_counts[symbol]} times, marking as failed")
                             failed_symbols.add(symbol)
-                            # Keep the mock data in cache
                         else:
-                            # Other errors - increment failure count
-                            failure_counts[symbol] = failure_counts.get(symbol, 0) + 1
-                            if failure_counts[symbol] >= 3:
-                                logger.error(f"Symbol {symbol} failed {failure_counts[symbol]} times, marking as failed")
-                                failed_symbols.add(symbol)
-                            else:
-                                logger.warning(f"Failed to update {symbol} (attempt {failure_counts[symbol]}): {e}")
+                            logger.warning(f"Failed to update {symbol} (attempt {failure_counts[symbol]}): {e}")
                         
+        except asyncio.CancelledError:
+            logger.info("Market data update task cancelled")
+            break
         except Exception as e:
             logger.error(f"Error in market data update loop: {e}")
             # Don't crash the entire loop - continue with cached data
@@ -175,7 +200,11 @@ async def update_market_data():
         if failed_symbols:
             logger.info(f"Using mock data for symbols without subscriptions: {sorted(failed_symbols)}")
         
-        await asyncio.sleep(300)  # Update every 5 minutes
+        try:
+            await asyncio.sleep(300)  # Update every 5 minutes
+        except asyncio.CancelledError:
+            logger.info("Market data update task cancelled during sleep")
+            break
 
 def calculate_features_for_prediction(trade: TradeRequest) -> pd.DataFrame:
     """Calculate features for a single trade prediction"""
