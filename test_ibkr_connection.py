@@ -6,7 +6,8 @@ import logging
 import sys
 import os
 
-# Add src to path for imports
+# Add src to path so this script can be executed directly.
+# Alternatively run with: `python -m tests.test_ibkr_connection`
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from data_providers.standalone_provider import StandaloneDataProvider

@@ -28,9 +28,9 @@ def test_module_execution():
     """Test that module execution works."""
     print("\n2. Testing module execution...")
     
-    # Start the API as a background process
+    # Start the API as a background process using uvicorn
     proc = subprocess.Popen(
-        [sys.executable, "-m", "src.prediction_api"],
+        [sys.executable, "-m", "uvicorn", "src.prediction_api:app", "--reload"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True
@@ -124,7 +124,7 @@ def main():
     if results[1] or results[2]:
         print("\n✅ Import fixes are working correctly!")
         print("\nRecommended ways to start the API:")
-        print("  1. python -m src.prediction_api")
+        print("  1. python -m uvicorn src.prediction_api:app --reload")
         print("  2. ./run_prediction_api.py")
         print("  3. ./start_api_with_checks.py")
     else:

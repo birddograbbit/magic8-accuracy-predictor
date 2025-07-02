@@ -15,13 +15,13 @@ The issue occurs because:
 
 ## The Solution
 
-### Method 1: Run as Module (Recommended)
+### Method 1: Run with Uvicorn (Recommended)
 ```bash
-# From project root directory
-python -m src.prediction_api
+# From the project root directory
+python -m uvicorn src.prediction_api:app --reload
 ```
 
-This tells Python to treat `prediction_api` as a module within the `src` package.
+This starts the FastAPI app with hot reload support.
 
 ### Method 2: Use Startup Scripts
 ```bash
@@ -32,16 +32,15 @@ This tells Python to treat `prediction_api` as a module within the `src` package
 
 ### Method 3: Manual Execution
 ```bash
-cd /Users/jt/magic8/magic8-accuracy-predictor
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
-python -m src.prediction_api
+python -m uvicorn src.prediction_api:app --reload
 ```
 
 ## Fixed Files
 
-1. **prediction_api.py**: Updated `if __name__ == "__main__"` to use direct app reference
-2. **start_api_with_checks.py**: Uses `-m` flag for module execution
-3. **run_prediction_api.py**: New simple runner script
+1. **prediction_api.py**: `uvicorn.run` now uses the import string `src.prediction_api:app`
+2. **start_api_with_checks.py**: Launches uvicorn directly
+3. **run_prediction_api.py**: Simple uvicorn runner script
 
 ## Why This Matters
 
@@ -53,8 +52,7 @@ python -m src.prediction_api
 
 ```bash
 # Test the API startup
-cd /Users/jt/magic8/magic8-accuracy-predictor
-python -m src.prediction_api
+python -m uvicorn src.prediction_api:app --reload
 
 # Or use the startup script
 ./start_api_with_checks.py
