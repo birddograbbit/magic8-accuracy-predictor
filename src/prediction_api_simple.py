@@ -17,7 +17,6 @@ import os
 import time
 import threading
 import math
-import asyncio
 
 # IB imports
 from ib_insync import IB, Stock, Index, util
@@ -72,45 +71,38 @@ class PredictionResponse(BaseModel):
     recommendation: str
     risk_score: float
 
+def init_ib_connection():
+    """Initialize IB connection at module level, before FastAPI starts."""
+    global ib, ib_connected
+    
+    try:
+        print("Connecting to IB Gateway on port 7497...")
+        ib = IB()
+        # Simple sync connection - no event loop conflicts at module level
+        ib.connect('127.0.0.1', 7497, clientId=99)
+        
+        if ib.isConnected():
+            ib_connected = True
+            print("✓ Connected to IB Gateway")
+            return True
+        else:
+            print("✗ Failed to connect to IB Gateway")
+            return False
+            
+    except Exception as e:
+        print(f"IB connection failed: {e}")
+        ib_connected = False
+        return False
+
+# Connect at module import time - no FastAPI event loop conflicts
+init_ib_connection()
+
 # Create FastAPI app
 app = FastAPI(
     title="Magic8 Prediction API",
     description="Simple prediction API with direct IB connection",
     version="3.0.0"
 )
-
-def connect_ib_sync():
-    """Connect to IB Gateway - handle async properly in thread."""
-    global ib, ib_connected
-    
-    try:
-        # Create new event loop for this thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        ib = IB()
-        logger.info("Connecting to IB Gateway on port 7497...")
-        
-        # Use util.run to handle the connection properly
-        def do_connect():
-            ib.connect('127.0.0.1', 7497, clientId=99)
-            return ib.isConnected()
-        
-        # Run the connection
-        connected = util.run(do_connect)
-        
-        if connected:
-            ib_connected = True
-            logger.info("✓ Connected to IB Gateway")
-            return True
-        else:
-            logger.error("Failed to connect to IB Gateway")
-            return False
-            
-    except Exception as e:
-        logger.error(f"IB connection error: {e}")
-        ib_connected = False
-        return False
 
 def get_ib_price(symbol: str) -> float:
     """Get price from IB - simple and direct."""
@@ -201,12 +193,23 @@ def load_model_and_features():
     global model, feature_names
     
     # Load model
-    model_path = 'models/xgboost_phase1_model.pkl'
-    if os.path.exists(model_path):
-        model = joblib.load(model_path)
-        logger.info(f"✓ Loaded model from {model_path}")
-    else:
-        logger.error(f"✗ Model not found at {model_path}")
+    model_paths = [
+        'models/xgboost_phase1_model.pkl',
+        'models/phase1/xgboost_model.pkl'
+    ]
+    
+    for model_path in model_paths:
+        if os.path.exists(model_path):
+            try:
+                model = joblib.load(model_path)
+                logger.info(f"✓ Loaded model from {model_path}")
+                break
+            except Exception as e:
+                logger.error(f"Error loading model from {model_path}: {e}")
+                continue
+    
+    if model is None:
+        logger.error("✗ No valid model found")
         return False
     
     # Load feature configuration
@@ -224,21 +227,14 @@ def load_model_and_features():
 
 @app.on_event("startup")
 def startup_event():
-    """Initialize on startup."""
+    """Initialize on startup - simple and clean."""
     logger.info("Starting Magic8 Prediction API...")
     
     # Load model and features
     if not load_model_and_features():
         logger.error("Failed to load model/features")
     
-    # Try to connect to IB in a separate thread to avoid event loop issues
-    def connect_thread():
-        connect_ib_sync()
-    
-    thread = threading.Thread(target=connect_thread)
-    thread.start()
-    thread.join(timeout=5)
-    
+    # Report connection status (connection already attempted at module level)
     if ib_connected:
         logger.info("✓ Ready with IB connection")
     else:

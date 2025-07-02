@@ -10,7 +10,7 @@ from typing import Dict, Optional, Any
 import aiohttp
 import numpy as np
 
-from .data_providers.standalone_provider import StandaloneDataProvider
+from data_providers.standalone_provider import StandaloneDataProvider
 from src.constants import DEFAULT_IB_PORT
 
 logger = logging.getLogger(__name__)

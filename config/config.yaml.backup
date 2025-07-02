@@ -1,0 +1,93 @@
+# Magic8 Accuracy Predictor Configuration
+
+system:
+  environment: "development"  # development, production, paper
+  log_level: "INFO"
+
+# Data source configuration
+data_source:
+  primary: "companion"  # Options: companion, redis, standalone
+  fallback: "standalone"     # Optional fallback if primary fails
+  
+  companion:
+    enabled: true
+    base_url: "http://localhost:8765"
+    timeout: 5
+    retry_attempts: 3
+    
+  redis:
+    enabled: true
+    host: "localhost"
+    port: 6379
+    db: 0
+    channels:
+      price_data: "market:prices:{symbol}"
+      vix_data: "market:vix"
+      option_data: "market:options:{symbol}"
+      
+  standalone:
+    enabled: true
+    ib_host: "127.0.0.1"
+    ib_port: 7497  # Different port to avoid conflicts
+    client_id: 99   # Unique client ID
+
+# Prediction configuration
+prediction:
+  models:
+    - name: "xgboost_phase1"
+      path: "models/phase1/xgboost_model.pkl"  # Will create this from the .json model
+      symbols: ["SPX", "SPY", "RUT", "QQQ", "XSP", "NDX", "AAPL", "TSLA"]
+      version: "1.0.0"
+    
+  feature_config:
+    temporal:
+      enabled: true
+      features: ["hour", "minute", "day_of_week", "minutes_to_close"]
+      
+    price:
+      enabled: true
+      sma_periods: [20]
+      momentum_periods: [5]
+      rsi_period: 14
+      
+    vix:
+      enabled: true
+      sma_period: 20
+      regime_thresholds: [15, 20, 25]
+
+# Integration settings
+integration:
+  discord_trading:
+    enabled: true
+    min_win_probability: 0.55
+    skip_on_error: false
+    log_all_predictions: true
+    
+  magic8_companion:
+    enabled: true
+    sync_predictions: true
+    
+  monitoring:
+    enabled: true
+    track_predictions: true
+    save_to_file: true
+    predictions_file: "logs/predictions.jsonl"
+
+# Performance optimization
+performance:
+  cache:
+    enabled: true
+    ttl_seconds: 300
+    max_size: 1000
+    
+  batch_predictions:
+    enabled: true
+    max_batch_size: 10
+    timeout_ms: 100
+
+# API settings (if running as service)
+api:
+  enabled: false
+  host: "0.0.0.0"
+  port: 8767
+  cors_origins: ["http://localhost:3000"]
