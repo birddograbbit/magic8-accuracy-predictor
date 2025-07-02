@@ -19,7 +19,7 @@ import os
 import asyncio
 from contextlib import asynccontextmanager
 
-from .data_manager import DataManager
+from data_manager import DataManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
