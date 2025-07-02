@@ -51,3 +51,4 @@ reports/
 strategy_parsing_test.json
 Thumbs.db
 venv/
+backup_local_changes/

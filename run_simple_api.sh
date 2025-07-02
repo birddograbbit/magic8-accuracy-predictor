@@ -1,21 +1,31 @@
 #!/bin/bash
-# Quick test of the simplified solution
+# Magic8 Accuracy Predictor API Startup Script
+# Updated for cleaned repository structure
 
-echo "Testing Simplified IB Connection (All in One File)"
-echo "=================================================="
+echo "🚀 Magic8 Accuracy Predictor - Quick Start"
+echo "=========================================="
 
-echo -e "\n1. Testing direct IB connection..."
-python test_direct_ib.py
+# Set Python path to resolve module imports after cleanup
+echo "📁 Setting Python path..."
+export PYTHONPATH="$(pwd)/src:$PYTHONPATH"
+
+echo -e "\n🔍 1. Testing model availability..."
+python -c "import joblib; joblib.load('models/xgboost_phase1_model.pkl'); print('✅ Model loads successfully')" 2>/dev/null
 
 if [ $? -eq 0 ]; then
-    echo -e "\n✓ IB connection works!"
-    echo -e "\n2. Starting API server..."
+    echo "✅ Model loaded successfully!"
+    echo -e "\n🎯 2. Starting API server..."
     echo "   Access at: http://localhost:8000"
-    echo "   Docs at: http://localhost:8000/docs"
+    echo "   Health check: http://localhost:8000/"
+    echo "   API docs: http://localhost:8000/docs"
     echo -e "\n   Press Ctrl+C to stop\n"
     
-    python -m uvicorn src.prediction_api_simple:app --host 0.0.0.0 --port 8000
+    python src/prediction_api_simple.py
 else
-    echo -e "\n✗ IB connection failed"
-    echo "  Check that IB Gateway is running on port 7497"
+    echo "❌ Model loading failed"
+    echo "   Make sure you have:"
+    echo "   - Run the ML training pipeline"
+    echo "   - Have models/xgboost_phase1_model.pkl file"
+    echo "   - Installed requirements: pip install -r requirements.txt"
+    exit 1
 fi
