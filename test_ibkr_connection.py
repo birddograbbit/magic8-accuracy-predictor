@@ -3,6 +3,12 @@
 
 import asyncio
 import logging
+import sys
+import os
+
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
 from data_providers.standalone_provider import StandaloneDataProvider
 
 # Set up logging

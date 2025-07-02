@@ -445,8 +445,9 @@ if __name__ == "__main__":
     import uvicorn
     
     # Run the FastAPI server
+    # Use __name__ to get the correct module path
     uvicorn.run(
-        "prediction_api:app",
+        app,  # Direct reference to the app object
         host="0.0.0.0",
         port=8000,
         reload=True,

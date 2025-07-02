@@ -100,7 +100,8 @@ def main():
     
     # Start the API
     try:
-        subprocess.run([sys.executable, "src/prediction_api.py"], check=True)
+        # Run as a module to ensure proper imports
+        subprocess.run([sys.executable, "-m", "src.prediction_api"], check=True)
     except KeyboardInterrupt:
         print("\n\nAPI stopped by user")
     except subprocess.CalledProcessError as e:
