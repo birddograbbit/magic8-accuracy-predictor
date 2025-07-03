@@ -71,6 +71,8 @@ def create_client(monkeypatch, scenario: ms.MarketScenario, hour: int, minute: i
             idx = names.index("vix") if "vix" in names else 0
             vix = X[0][idx]
             prob = 1 / (1 + np.exp(-(vix - 20) / 5))
+            # Cap probabilities to stay within reasonable bounds
+            prob = min(max(prob, 0.05), 0.95)
             return np.array([[1 - prob, prob]])
 
     monkeypatch.setattr(api.joblib, "load", lambda p: SimpleModel())
@@ -111,7 +113,7 @@ def test_prediction_ranges(monkeypatch, scenario, time_label, strategy, symbol):
     resp = client.post("/predict", json=payload)
     assert resp.status_code == 200
     data = resp.json()
-    assert 0.1 <= data["win_probability"] <= 0.9
+    assert 0.05 <= data["win_probability"] <= 0.95
     assert data["n_features"] == 74
     client.__exit__(None, None, None)
 

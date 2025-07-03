@@ -3,6 +3,7 @@
 
 import os
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
@@ -43,28 +44,30 @@ model = None
 feature_gen: RealTimeFeatureGenerator
 manager: DataManager
 
-app = FastAPI(title="Magic8 Real-Time Prediction API")
-
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
     global model, feature_gen, manager
-
+    
     # Load config
     with open(CONFIG_PATH) as f:
         cfg = yaml.safe_load(f)
     manager = DataManager(cfg.get("data_source", {}))
     await manager.connect()
-
+    
     feature_gen = RealTimeFeatureGenerator(manager, feature_info_path=FEATURE_INFO_PATH)
-
+    
     if not os.path.exists(MODEL_PATH):
         raise RuntimeError("Model file missing")
     model = joblib.load(MODEL_PATH)
     logger.info("Model loaded, feature generator ready")
-
-@app.on_event("shutdown")
-async def shutdown():
+    
+    yield
+    
+    # Shutdown
     await manager.disconnect()
+
+app = FastAPI(title="Magic8 Real-Time Prediction API", lifespan=lifespan)
 
 @app.get("/market/{symbol}")
 async def market(symbol: str):
@@ -82,7 +85,7 @@ async def predict(req: TradeRequest):
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    order = req.dict()
+    order = req.model_dump()
     features, names = await feature_gen.generate_features(req.symbol, order)
     X = np.array([features])
     proba = model.predict_proba(X)[0][1]
