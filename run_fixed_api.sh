@@ -4,6 +4,9 @@
 echo "🚀 Starting Fixed Magic8 Prediction API..."
 echo "========================================"
 
+# Disable MallocStackLogging on macOS to prevent warnings
+export MallocStackLogging=0
+
 # Set Python path
 export PYTHONPATH="$(pwd)/src:$PYTHONPATH"
 
