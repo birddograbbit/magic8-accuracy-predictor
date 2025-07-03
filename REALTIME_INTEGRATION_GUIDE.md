@@ -29,11 +29,20 @@ pip install fastapi uvicorn pandas numpy xgboost scikit-learn
 
 ### 2. Start the Prediction Service
 ```bash
-cd src
-python prediction_api.py
+./run_realtime_api.sh
 ```
+The API will be available at `http://localhost:8000` and automatically
+generates all 74 Phase‑1 features using live market data. Ensure the
+Magic8‑Companion API or IBKR Gateway is running so market data is
+available. The service falls back to mock prices when both sources fail.
 
-The API will be available at `http://localhost:8000`
+`src/prediction_api_realtime.py` uses `DataManager` to pull current prices
+and historical bars from either data source with caching (30&nbsp;seconds for
+prices, five minutes for bars). These values are passed to
+`RealTimeFeatureGenerator`, which computes SMA, momentum, RSI and other
+indicators and then orders them according to `data/phase1_processed/feature_info.json`.
+Price and VIX data are fetched concurrently so prediction responses remain
+fast while still matching the exact feature set used during model training.
 
 ### 3. Test the API
 ```bash

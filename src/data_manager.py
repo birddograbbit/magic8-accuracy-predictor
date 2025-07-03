@@ -22,7 +22,8 @@ class DataManager:
     def __init__(self, config: dict):
         self.config = config
         self.cache: Dict[str, Dict[str, Any]] = {}
-        self.cache_ttl = timedelta(minutes=5)
+        self.price_cache_ttl = timedelta(seconds=30)
+        self.bars_cache_ttl = timedelta(minutes=5)
         self.companion_url = config.get("companion", {}).get("base_url", "http://localhost:8765")
         self.use_standalone = config.get("standalone", {}).get("enabled", True)
         self._ib_provider: Optional[StandaloneDataProvider] = None
@@ -63,18 +64,33 @@ class DataManager:
             finally:
                 self._ib_provider = None
 
+    # Compatibility helpers for provider interface
+    async def connect(self) -> bool:
+        await self.__aenter__()
+        return True
 
-    def _is_cache_valid(self, key: str) -> bool:
+    async def disconnect(self):
+        await self.__aexit__(None, None, None)
+
+    async def is_connected(self) -> bool:
+        if self._companion_session:
+            return True
+        if self._ib_provider and await self._ib_provider.is_connected():
+            return True
+        return False
+
+
+    def _is_cache_valid(self, key: str, ttl: timedelta) -> bool:
         if key not in self.cache:
             return False
         ts = self.cache[key].get("timestamp")
         if not ts:
             return False
-        return datetime.now() - ts < self.cache_ttl
+        return datetime.now() - ts < ttl
 
     async def get_market_data(self, symbol: str) -> Dict[str, Any]:
         key = f"market_{symbol}"
-        if self._is_cache_valid(key):
+        if self._is_cache_valid(key, self.price_cache_ttl):
             logger.debug("Using cached data for %s", symbol)
             return self.cache[key]["data"]
 
@@ -106,6 +122,44 @@ class DataManager:
                     logger.warning("IBKR fetch failed for %s: %s", symbol, e)
 
         return self._get_mock_data(symbol)
+
+    async def get_current_price(self, symbol: str) -> Dict[str, Any]:
+        """Convenience wrapper returning only current price information."""
+        return await self.get_market_data(symbol)
+
+    async def get_price_data(self, symbol: str, bars: int = 100, interval: str = "5 mins") -> Optional[list]:
+        """Get historical price bars with caching."""
+        key = f"bars_{symbol}_{bars}_{interval}"
+        if self._is_cache_valid(key, self.bars_cache_ttl):
+            return self.cache[key]["data"]
+
+        try:
+            if self.use_standalone and self._ib_provider:
+                data = await self._ib_provider.get_price_data(symbol, bars=bars, interval=interval)
+                if data:
+                    self.cache[key] = {"data": data, "timestamp": datetime.now()}
+                    return data
+        except Exception as e:
+            logger.debug(f"IBKR price data failed for {symbol}: {e}")
+
+        # Fallback to companion if available
+        if self._companion_session:
+            try:
+                url = f"{self.companion_url}/market/{symbol}/bars?count={bars}&interval={interval}"
+                async with self._companion_session.get(url, timeout=5) as resp:
+                    if resp.status == 200:
+                        payload = await resp.json()
+                        data = payload.get("bars", [])
+                        self.cache[key] = {"data": data, "timestamp": datetime.now()}
+                        return data
+            except Exception as e:
+                logger.debug(f"Companion bars failed for {symbol}: {e}")
+
+        return []
+
+    async def get_vix_data(self) -> Dict[str, Any]:
+        """Get current VIX market data using existing helpers."""
+        return await self.get_market_data("VIX")
 
     def _is_subscription_error(self, error_msg: str) -> bool:
         """Check if the error is due to missing market data subscription."""
