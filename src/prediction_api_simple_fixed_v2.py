@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Fixed Magic8 Prediction API with proper feature calculation.
+Fixed Magic8 Prediction API with proper market data management.
+Version 2: Persistent subscriptions, no double cancellation.
 """
 
 from fastapi import FastAPI, HTTPException
@@ -36,6 +37,7 @@ ib = None
 ib_connected = False
 market_data_cache = {}
 cache_lock = threading.Lock()
+active_tickers = {}  # Track active market data subscriptions
 
 # Constants
 CACHE_TTL_SECONDS = 30
@@ -48,7 +50,7 @@ MOCK_PRICES = {
     'NDX': 20000.0,
     'AAPL': 220.0,
     'TSLA': 200.0,
-    'XSP': 585.0  # Added XSP
+    'XSP': 585.0
 }
 
 class TradeRequest(BaseModel):
@@ -74,67 +76,125 @@ class PredictionResponse(BaseModel):
     risk_score: float
 
 def init_ib_connection():
-    """Initialize IB connection at module level, before FastAPI starts."""
+    """Initialize IB connection at module level."""
     global ib, ib_connected
     
     try:
-        print("Connecting to IB Gateway on port 7497...")
+        logger.info("Connecting to IB Gateway on port 7497...")
         ib = IB()
-        # Simple sync connection - no event loop conflicts at module level
         ib.connect('127.0.0.1', 7497, clientId=99)
         
         if ib.isConnected():
             ib_connected = True
-            print("✓ Connected to IB Gateway")
+            logger.info("✓ Connected to IB Gateway")
             return True
         else:
-            print("✗ Failed to connect to IB Gateway")
+            logger.info("✗ Failed to connect to IB Gateway")
             return False
             
     except Exception as e:
-        print(f"IB connection failed: {e}")
+        logger.info(f"IB connection failed: {e}")
         ib_connected = False
         return False
 
-# Connect at module import time - no FastAPI event loop conflicts
+def setup_market_data_subscriptions():
+    """Set up persistent market data subscriptions for all symbols."""
+    global active_tickers
+    
+    if not ib_connected or not ib or not ib.isConnected():
+        logger.info("Skipping market data setup - no IB connection")
+        return
+    
+    symbols = ['SPX', 'SPY', 'XSP', 'NDX', 'QQQ', 'RUT', 'AAPL', 'TSLA', 'VIX']
+    
+    for symbol in symbols:
+        try:
+            # Create contract
+            if symbol in ['SPX', 'VIX', 'XSP']:
+                contract = Index(symbol, 'CBOE', 'USD')
+            elif symbol == 'RUT':
+                contract = Index('RUT', 'RUSSELL', 'USD')
+            elif symbol == 'NDX':
+                contract = Index('NDX', 'NASDAQ', 'USD')
+            else:
+                contract = Stock(symbol, 'SMART', 'USD')
+            
+            # Request persistent market data
+            ticker = ib.reqMktData(contract, '', False, False)
+            active_tickers[symbol] = ticker
+            logger.info(f"✓ Set up market data for {symbol}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to set up market data for {symbol}: {e}")
+
+def get_ib_price(symbol: str) -> float:
+    """Get price from existing market data subscription."""
+    global active_tickers
+    
+    if symbol not in active_tickers:
+        raise Exception(f"No active subscription for {symbol}")
+    
+    ticker = active_tickers[symbol]
+    
+    # Wait briefly for updated data
+    timeout = 1.0
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        if ticker.last and not math.isnan(ticker.last):
+            return float(ticker.last)
+        elif ticker.close and not math.isnan(ticker.close):
+            return float(ticker.close)
+        time.sleep(0.1)
+    
+    # If no live data, try using cached values
+    if ticker.close and not math.isnan(ticker.close):
+        return float(ticker.close)
+    
+    raise Exception(f"No price data available for {symbol}")
+
+# Connect at module import time
 init_ib_connection()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager - modern replacement for on_event."""
+    """Application lifespan manager."""
     global ib, ib_connected
     
     # Startup
-    logger.info("Starting Magic8 Prediction API (Fixed)...")
+    logger.info("Starting Magic8 Prediction API (Fixed v2)...")
     
-    # Suppress ML library warnings during startup
+    # Load model and features
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=UserWarning, module="xgboost")
         warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
         
-        # Load model and features
         if not load_model_and_features():
             logger.error("Failed to load model/features")
     
-    # Report connection status (connection already attempted at module level)
+    # Set up persistent market data subscriptions
     if ib_connected:
-        logger.info("✓ Ready with IB connection")
+        setup_market_data_subscriptions()
+        logger.info("✓ Ready with IB connection and market data")
     else:
         logger.warning("✗ Running without IB - will use mock data")
     
     yield  # Application runs here
     
-    # Shutdown
+    # Shutdown - Clean cancellation of active subscriptions only
     logger.info("Shutting down...")
     
     if ib and ib.isConnected():
         try:
-            # Cancel any active market data
-            for ticker in ib.tickers():
+            # Cancel only our tracked active subscriptions
+            for symbol, ticker in active_tickers.items():
                 try:
                     ib.cancelMktData(ticker)
-                except:
-                    pass
+                    logger.debug(f"Cancelled market data for {symbol}")
+                except Exception as e:
+                    logger.debug(f"Error cancelling {symbol}: {e}")
+            
+            active_tickers.clear()
             ib.disconnect()
             logger.info("✓ Disconnected from IB")
         except Exception as e:
@@ -145,78 +205,14 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app with lifespan
 app = FastAPI(
-    title="Magic8 Prediction API (Fixed)",
-    description="Fixed prediction API with proper feature calculation",
-    version="3.1.0",
+    title="Magic8 Prediction API (Fixed v2)",
+    description="Fixed prediction API with proper market data management",
+    version="3.2.0",
     lifespan=lifespan
 )
 
-def calculate_rsi(prices: List[float], period: int = 14) -> float:
-    """Calculate RSI from price list."""
-    if len(prices) < period + 1:
-        return 50.0  # Default neutral RSI
-    
-    deltas = np.diff(prices)
-    seed = deltas[:period+1]
-    up = seed[seed >= 0].sum() / period
-    down = -seed[seed < 0].sum() / period
-    
-    if down == 0:
-        return 100.0
-    
-    rs = up / down
-    rsi = 100.0 - (100.0 / (1.0 + rs))
-    
-    return float(rsi)
-
-def get_ib_price(symbol: str) -> float:
-    """Get price from IB - simple and direct."""
-    global ib, ib_connected
-    
-    if not ib_connected or not ib or not ib.isConnected():
-        raise Exception("Not connected to IB")
-    
-    try:
-        # Create contract
-        if symbol in ['SPX', 'VIX', 'XSP']:
-            contract = Index(symbol, 'CBOE', 'USD')
-        elif symbol == 'RUT':
-            contract = Index('RUT', 'RUSSELL', 'USD')
-        elif symbol == 'NDX':
-            contract = Index('NDX', 'NASDAQ', 'USD')
-        else:
-            contract = Stock(symbol, 'SMART', 'USD')
-        
-        # Request market data
-        ticker = ib.reqMktData(contract, '', False, False)
-        
-        # Wait for price with timeout
-        timeout = 2.0
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
-            if ticker.last and not math.isnan(ticker.last):
-                price = ticker.last
-                break
-            elif ticker.close and not math.isnan(ticker.close):
-                price = ticker.close
-                break
-            time.sleep(0.1)
-        else:
-            ib.cancelMktData(ticker)
-            raise Exception(f"Timeout getting price for {symbol}")
-        
-        # Cancel market data
-        ib.cancelMktData(ticker)
-        
-        return float(price)
-        
-    except Exception as e:
-        logger.debug(f"Error getting IB price for {symbol}: {e}")
-        raise
-
 def get_market_data(symbol: str) -> Dict:
-    """Get market data with caching."""
+    """Get market data with caching and improved error handling."""
     global market_data_cache
     
     with cache_lock:
@@ -227,7 +223,7 @@ def get_market_data(symbol: str) -> Dict:
             if age < CACHE_TTL_SECONDS:
                 return cache_entry['data']
     
-    # Try to get live price
+    # Try to get live price from persistent subscription
     try:
         price = get_ib_price(symbol)
         data = {
@@ -235,6 +231,7 @@ def get_market_data(symbol: str) -> Dict:
             'volatility': 0.20,  # Default volatility
             'source': 'ibkr'
         }
+        logger.debug(f"Got live price for {symbol}: {price}")
     except Exception as e:
         logger.debug(f"Using mock data for {symbol}: {e}")
         # Use mock data
@@ -254,10 +251,9 @@ def get_market_data(symbol: str) -> Dict:
     return data
 
 def load_model_and_features():
-    """Load model and feature configuration with proper version handling."""
+    """Load model and feature configuration."""
     global model, feature_names
     
-    # Load model with warning suppression
     model_paths = [
         'models/xgboost_phase1_model.pkl',
         'models/phase1/xgboost_model.pkl'
@@ -266,25 +262,18 @@ def load_model_and_features():
     for model_path in model_paths:
         if os.path.exists(model_path):
             try:
-                # Suppress version warnings during model loading
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", category=UserWarning, module="xgboost")
                     warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
-                    warnings.filterwarnings("ignore", message=".*version.*", category=UserWarning)
                     
                     model = joblib.load(model_path)
                     logger.info(f"✓ Loaded model from {model_path}")
                     
                     # Verify model compatibility
                     if hasattr(model, 'predict_proba'):
-                        try:
-                            # Test with dummy data
-                            import pandas as pd
-                            dummy_df = pd.DataFrame([[0.0] * 74])  # 74 features
-                            _ = model.predict_proba(dummy_df)
-                            logger.info("✓ Model compatibility verified")
-                        except Exception as test_error:
-                            logger.warning(f"Model compatibility test failed: {test_error}")
+                        dummy_df = pd.DataFrame([[0.0] * 74])
+                        _ = model.predict_proba(dummy_df)
+                        logger.info("✓ Model compatibility verified")
                     
                     break
             except Exception as e:
@@ -308,8 +297,6 @@ def load_model_and_features():
     
     return True
 
-# Event handlers replaced with lifespan context manager above
-
 @app.get("/")
 def root():
     """Health check endpoint."""
@@ -318,6 +305,7 @@ def root():
         "model_loaded": model is not None,
         "features_loaded": feature_names is not None,
         "ib_connected": ib_connected,
+        "active_subscriptions": len(active_tickers),
         "timestamp": datetime.now().isoformat()
     }
 
@@ -330,12 +318,13 @@ def health():
         "components": {
             "model": "loaded" if model else "not_loaded",
             "features": f"{len(feature_names)} features" if feature_names else "not_loaded",
-            "ib_connection": "connected" if ib_connected else "disconnected"
+            "ib_connection": "connected" if ib_connected else "disconnected",
+            "market_data": f"{len(active_tickers)} active subscriptions"
         }
     }
 
 def build_features(request: TradeRequest) -> pd.DataFrame:
-    """Build feature vector from trade request with ALL required features."""
+    """Build feature vector from trade request."""
     # Get current time info
     now = datetime.now()
     hour = now.hour
@@ -399,7 +388,7 @@ def build_features(request: TradeRequest) -> pd.DataFrame:
     
     # VIX features
     features['vix'] = vix_level
-    features['vix_vix_sma_20'] = vix_level  # Approximate
+    features['vix_vix_sma_20'] = vix_level
     features['vix_vix_change'] = 0.0
     
     # VIX regime features
@@ -436,7 +425,6 @@ def build_features(request: TradeRequest) -> pd.DataFrame:
     missing_features = set(feature_names) - set(df.columns)
     if missing_features:
         logger.warning(f"Missing features: {missing_features}")
-        # Only fill truly missing features with appropriate defaults
         for feat in missing_features:
             df[feat] = 0
     
@@ -514,4 +502,4 @@ async def get_market_data_endpoint(symbol: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000) 
