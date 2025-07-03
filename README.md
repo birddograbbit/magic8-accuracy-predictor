@@ -202,11 +202,21 @@ magic8-accuracy-predictor/
    ```
 2. Send a sample prediction request:
    ```bash
-   curl -X POST http://localhost:8000/predict \
+  curl -X POST http://localhost:8000/predict \
         -H "Content-Type: application/json" \
         -d '{"strategy": "Butterfly", "symbol": "SPX", "premium": 1.25, "predicted_price": 5850}'
-   ```
-   The response includes the market data source and number of features used.
+  ```
+  The response includes the market data source and number of features used.
+
+### Running Comprehensive API Tests
+Execute the scenario-driven test suite to verify prediction behaviour:
+
+```bash
+python tests/run_comprehensive_tests.py
+```
+
+This runs over 100 parameterized cases spanning volatility regimes,
+market sessions, strategies and symbols to ensure the API remains robust.
 
 ### Simplified IBKR Connection
 All components now share a single IBKR connection managed by `IBConnectionManager`.
@@ -267,3 +277,4 @@ If you see "Error 354: Requested market data is not subscribed" for symbols like
 **Last Updated**: July 2, 2025  
 **Phase 1 Status**: ✅ Complete - 88.21% accuracy achieved!  
 **Next Goal**: Real-time prediction system
+
