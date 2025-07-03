@@ -195,6 +195,19 @@ magic8-accuracy-predictor/
    ```
    The service will fetch prices from Magic8-Companion when available and fall back to IBKR directly. Data is cached for 5 minutes.
 
+### Running the Real-Time Feature API
+1. Start the new API that generates Phase‑1 features automatically:
+   ```bash
+   ./run_realtime_api.sh
+   ```
+2. Send a sample prediction request:
+   ```bash
+   curl -X POST http://localhost:8000/predict \
+        -H "Content-Type: application/json" \
+        -d '{"strategy": "Butterfly", "symbol": "SPX", "premium": 1.25, "predicted_price": 5850}'
+   ```
+   The response includes the market data source and number of features used.
+
 ### Simplified IBKR Connection
 All components now share a single IBKR connection managed by `IBConnectionManager`.
 This singleton ensures only one active `IB` instance is used across the project.
