@@ -72,12 +72,29 @@ class Magic8DataProcessorOptimized:
         self.start_time = time.time()
         self.folders_processed = 0
         
-        # Define consistent column order
+        # Define expanded column order including all sheet fields
         self.column_order = [
-            'date', 'time', 'symbol', 'price', 'strategy', 'premium', 
-            'predicted', 'closed', 'expired', 'trade_description', 
-            'risk', 'reward', 'ratio', 'profit', 'source_file', 
-            'format_year', 'timestamp', 'win'
+            # Identity
+            'date', 'time', 'timestamp', 'symbol', 'strategy',
+
+            # Profit sheet
+            'price', 'premium', 'predicted', 'closed', 'expired',
+            'risk', 'reward', 'ratio', 'profit', 'win',
+
+            # Trades sheet
+            'source', 'expected_move', 'low', 'high',
+            'target1', 'target2', 'predicted_trades', 'closing',
+            'strike1', 'direction1', 'type1', 'bid1', 'ask1', 'mid1',
+            'strike2', 'direction2', 'type2', 'bid2', 'ask2', 'mid2',
+            'strike3', 'direction3', 'type3', 'bid3', 'ask3', 'mid3',
+            'strike4', 'direction4', 'type4', 'bid4', 'ask4', 'mid4',
+
+            # Delta sheet
+            'call_delta', 'put_delta', 'predicted_delta',
+            'short_term', 'long_term', 'closing_delta',
+
+            # Metadata
+            'trade_description', 'source_file', 'format_year'
         ]
         
     def clean_string(self, value: str) -> str:
@@ -189,13 +206,41 @@ class Magic8DataProcessorOptimized:
             elif 'trades' in file_path.name:
                 files['trades'] = file_path
         
-        # Process profit file (always present)
+        # Merge data from profit, trades and delta files
+        trades_data: Dict[str, Dict] = {}
+
+        # 1. Profit file is base
         if files['profit']:
-            self.process_profit_file(files['profit'], folder_date)
-        
-        # Process trades file if present (Nov 2024 onwards)
+            profit_trades = self.process_profit_file(files['profit'], folder_date)
+            for trade in profit_trades:
+                key = self._create_trade_key(trade)
+                trades_data[key] = trade
+
+        # 2. Enhance with trades file
         if files['trades']:
-            self.process_trades_file(files['trades'], folder_date)
+            trades_info = self.process_trades_file_enhanced(files['trades'], folder_date)
+            for trade in trades_info:
+                key = self._create_trade_key(trade)
+                if key in trades_data:
+                    trades_data[key].update(trade)
+                else:
+                    trades_data[key] = trade
+
+        # 3. Add delta sheet data
+        if files['delta']:
+            delta_data = self.process_delta_file(files['delta'], folder_date)
+            for key, trade in trades_data.items():
+                time_key = f"{trade.get('date')} {trade.get('time')}"
+                if time_key in delta_data:
+                    trade.update(delta_data[time_key])
+
+        # Add merged trades to batch
+        for trade in trades_data.values():
+            self.validate_and_add_trade(trade, str(folder))
+
+    def _create_trade_key(self, trade: Dict) -> str:
+        """Create a unique key for matching trades across sheets."""
+        return f"{trade.get('date')}_{trade.get('time')}_{trade.get('symbol')}_{trade.get('strategy')}"
     
     def extract_date_from_folder(self, folder_name: str) -> Optional[datetime]:
         """Extract date from folder name (YYYY-MM-DD-XXXXX format)."""
@@ -260,7 +305,7 @@ class Magic8DataProcessorOptimized:
             self.timestamp_stats['failed_timestamps'] += 1
             return None
     
-    def process_profit_file(self, file_path: Path, folder_date: datetime):
+    def process_profit_file(self, file_path: Path, folder_date: datetime) -> List[Dict]:
         """Process a profit file, handling all format variations."""
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             # Read first line to determine format
@@ -269,17 +314,20 @@ class Magic8DataProcessorOptimized:
             
             # Determine format based on header
             if first_line.startswith('Day,Hour'):
-                self.process_profit_2023_format(f, folder_date, file_path)
+                trades = self.process_profit_2023_format(f, folder_date, file_path)
             elif first_line.startswith('Date,Hour'):
-                self.process_profit_2025_format(f, folder_date, file_path)
+                trades = self.process_profit_2025_format(f, folder_date, file_path)
             else:
                 # 2024 format or unknown
-                self.process_profit_2024_format(f, folder_date, file_path)
+                trades = self.process_profit_2024_format(f, folder_date, file_path)
+
+        return trades
     
-    def process_profit_2023_format(self, file_obj, folder_date: datetime, file_path: Path):
+    def process_profit_2023_format(self, file_obj, folder_date: datetime, file_path: Path) -> List[Dict]:
         """Process 2023 format profit files."""
         reader = csv.DictReader(file_obj)
-        
+        trades = []
+
         for row_num, row in enumerate(reader, 2):
             try:
                 # Skip summary rows
@@ -319,7 +367,7 @@ class Magic8DataProcessorOptimized:
                     'ratio': self.safe_float(row.get('Ratio')),
                     'profit': self.safe_float(row.get('Profit') or row.get('Raw') or row.get('Managed')),
                     'source_file': 'profit',
-                    'format_year': 2023,
+                    'format_year': folder_date.year,
                     'timestamp': timestamp
                 }
 
@@ -330,8 +378,7 @@ class Magic8DataProcessorOptimized:
                         'available_columns': list(row.keys())
                     })
                 
-                # Validate and add trade
-                self.validate_and_add_trade(trade, str(file_path))
+                trades.append(trade)
                 
             except Exception as e:
                 self.quality_issues['row_errors'].append({
@@ -339,11 +386,14 @@ class Magic8DataProcessorOptimized:
                     'row': row_num,
                     'error': str(e)
                 })
-    
-    def process_profit_2024_format(self, file_obj, folder_date: datetime, file_path: Path):
+
+        return trades
+
+    def process_profit_2024_format(self, file_obj, folder_date: datetime, file_path: Path) -> List[Dict]:
         """Process 2024 format profit files."""
         reader = csv.DictReader(file_obj)
-        
+        trades = []
+
         for row_num, row in enumerate(reader, 2):
             try:
                 # Skip summary rows
@@ -376,7 +426,7 @@ class Magic8DataProcessorOptimized:
                     'profit': self.safe_float(row.get('Profit') or row.get('Raw') or row.get('Managed')),
                     'trade_description': self.clean_string(row.get('Trade', '')),
                     'source_file': 'profit',
-                    'format_year': 2024,
+                    'format_year': folder_date.year,
                     'timestamp': f"{folder_date.strftime('%Y-%m-%d')} {time_str}:00" if time_str else None
                 }
 
@@ -387,8 +437,7 @@ class Magic8DataProcessorOptimized:
                         'available_columns': list(row.keys())
                     })
                 
-                # Validate and add trade
-                self.validate_and_add_trade(trade, str(file_path))
+                trades.append(trade)
                 
             except Exception as e:
                 self.quality_issues['row_errors'].append({
@@ -396,11 +445,14 @@ class Magic8DataProcessorOptimized:
                     'row': row_num,
                     'error': str(e)
                 })
+
+        return trades
     
-    def process_profit_2025_format(self, file_obj, folder_date: datetime, file_path: Path):
+    def process_profit_2025_format(self, file_obj, folder_date: datetime, file_path: Path) -> List[Dict]:
         """Process 2025 format profit files."""
         reader = csv.DictReader(file_obj)
-        
+        trades = []
+
         for row_num, row in enumerate(reader, 2):
             try:
                 # Skip summary rows
@@ -432,7 +484,7 @@ class Magic8DataProcessorOptimized:
                     'total_profit': self.safe_float(row.get('TotalProfit')),
                     'trade_description': self.clean_string(row.get('Trade', '')),
                     'source_file': 'profit',
-                    'format_year': 2025,
+                    'format_year': folder_date.year,
                     'timestamp': f"{folder_date.strftime('%Y-%m-%d')} {time_str}:00" if time_str else None
                 }
 
@@ -443,8 +495,7 @@ class Magic8DataProcessorOptimized:
                         'available_columns': list(row.keys())
                     })
                 
-                # Validate and add trade
-                self.validate_and_add_trade(trade, str(file_path))
+                trades.append(trade)
                 
             except Exception as e:
                 self.quality_issues['row_errors'].append({
@@ -452,12 +503,15 @@ class Magic8DataProcessorOptimized:
                     'row': row_num,
                     'error': str(e)
                 })
+
+        return trades
     
-    def process_trades_file(self, file_path: Path, folder_date: datetime):
-        """Process a trades file (Nov 2024 onwards format)."""
+    def process_trades_file_enhanced(self, file_path: Path, folder_date: datetime) -> List[Dict]:
+        """Process trades file with full strike breakdown."""
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             reader = csv.DictReader(f)
-            
+            trades = []
+
             for row_num, row in enumerate(reader, 2):
                 try:
                     # Clean and parse timestamp
@@ -478,16 +532,49 @@ class Magic8DataProcessorOptimized:
                         'date': trade_date,
                         'time': est_time,
                         'symbol': self.clean_string(row.get('Symbol', '')),
-                        'strategy': self.clean_string(row.get('Name', '')),  # IMPORTANT: Use Name column
+                        'strategy': self.clean_string(row.get('Name', '')),
                         'premium': self.safe_float(row.get('Premium')),
                         'profit': self.safe_float(row.get('Profit') or row.get('Raw') or row.get('Managed')),
                         'risk': self.safe_float(row.get('Risk')),
                         'expected_move': self.safe_float(row.get('ExpectedMove')),
-                        'predicted': self.safe_float(row.get('Predicted')),
+                        'low': self.safe_float(row.get('Low')),
+                        'high': self.safe_float(row.get('High')),
+                        'target1': self.safe_float(row.get('Target1')),
+                        'target2': self.safe_float(row.get('Target2')),
+                        'predicted_trades': self.safe_float(row.get('Predicted')),
                         'closing': self.safe_float(row.get('Closing')),
+
+                        'strike1': self.safe_float(row.get('Strike1')),
+                        'direction1': self.clean_string(row.get('Direction1', '')),
+                        'type1': self.clean_string(row.get('Type1', '')),
+                        'bid1': self.safe_float(row.get('Bid1')),
+                        'ask1': self.safe_float(row.get('Ask1')),
+                        'mid1': self.safe_float(row.get('Mid1')),
+
+                        'strike2': self.safe_float(row.get('Strike2')),
+                        'direction2': self.clean_string(row.get('Direction2', '')),
+                        'type2': self.clean_string(row.get('Type2', '')),
+                        'bid2': self.safe_float(row.get('Bid2')),
+                        'ask2': self.safe_float(row.get('Ask2')),
+                        'mid2': self.safe_float(row.get('Mid2')),
+
+                        'strike3': self.safe_float(row.get('Strike3')),
+                        'direction3': self.clean_string(row.get('Direction3', '')),
+                        'type3': self.clean_string(row.get('Type3', '')),
+                        'bid3': self.safe_float(row.get('Bid3')),
+                        'ask3': self.safe_float(row.get('Ask3')),
+                        'mid3': self.safe_float(row.get('Mid3')),
+
+                        'strike4': self.safe_float(row.get('Strike4')),
+                        'direction4': self.clean_string(row.get('Direction4', '')),
+                        'type4': self.clean_string(row.get('Type4', '')),
+                        'bid4': self.safe_float(row.get('Bid4')),
+                        'ask4': self.safe_float(row.get('Ask4')),
+                        'mid4': self.safe_float(row.get('Mid4')),
+
                         'trade_description': self.clean_string(row.get('Trade', '')),
                         'source_file': 'trades',
-                        'format_year': 2024,
+                        'format_year': folder_date.year,
                         'timestamp': f"{trade_date} {est_time}:00"
                     }
 
@@ -498,8 +585,7 @@ class Magic8DataProcessorOptimized:
                             'available_columns': list(row.keys())
                         })
                     
-                    # Add trade (duplicate checking would require loading previous data)
-                    self.validate_and_add_trade(trade, str(file_path))
+                    trades.append(trade)
                         
                 except Exception as e:
                     self.quality_issues['row_errors'].append({
@@ -507,6 +593,8 @@ class Magic8DataProcessorOptimized:
                         'row': row_num,
                         'error': str(e)
                     })
+
+        return trades
     
     def parse_trades_timestamp(self, date_str: str, time_str: str) -> Optional[datetime]:
         """Parse trades file timestamp (UTC) and convert to EST/EDT."""
@@ -526,9 +614,33 @@ class Magic8DataProcessorOptimized:
             dt_eastern = dt_utc.astimezone(eastern_tz)
             
             return dt_eastern
-            
+
         except Exception as e:
             return None
+
+    def process_delta_file(self, file_path: Path, folder_date: datetime) -> Dict[str, Dict]:
+        """Process delta sheet for prediction indicators."""
+        delta_data = {}
+
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            reader = csv.DictReader(f)
+
+            for row in reader:
+                when = self.clean_string(row.get('When', ''))
+                if when:
+                    time_part = when.split()[-1] if ' ' in when else ''
+                    time_key = f"{folder_date.strftime('%Y-%m-%d')} {time_part}"
+
+                    delta_data[time_key] = {
+                        'call_delta': self.safe_float(row.get('CallDelta')),
+                        'put_delta': self.safe_float(row.get('PutDelta')),
+                        'predicted_delta': self.safe_float(row.get('Predicted')),
+                        'short_term': self.safe_float(row.get('ShortTerm')),
+                        'long_term': self.safe_float(row.get('LongTerm')),
+                        'closing_delta': self.safe_float(row.get('Closing'))
+                    }
+
+        return delta_data
     
     def validate_and_add_trade(self, trade: Dict, filename: str):
         """Validate trade data and add to current batch."""
