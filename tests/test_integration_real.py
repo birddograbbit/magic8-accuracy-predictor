@@ -40,7 +40,6 @@ def test_prediction_flow(monkeypatch):
     monkeypatch.setattr(api, "DataManager", FakeManager)
     monkeypatch.setattr(api.joblib, "load", lambda p: type("M", (), {"predict_proba": lambda self, X: [[0.4, 0.6]]})())
 
-    import importlib
     rtf = importlib.import_module("feature_engineering.real_time_features")
     monkeypatch.setattr(rtf, "datetime", rtf.datetime)
 

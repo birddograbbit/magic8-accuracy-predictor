@@ -417,6 +417,28 @@ class XGBoostBaseline:
             'profit_improvement_pct': ((total_model - total_baseline) / abs(total_baseline) * 100) if total_baseline != 0 else 0,
         }
 
+    def evaluate_profit_impact_corrected(self):
+        """Recompute baseline profit using actual trade profits."""
+        if 'profit' not in self.test_df.columns:
+            raise ValueError("Profit column missing from test data")
+
+        baseline_profit = self.test_df['profit'].sum()
+
+        dtest = xgb.DMatrix(self.X_test)
+        preds = (self.model.predict(dtest) > 0.5).astype(int)
+        model_profit = 0.0
+
+        for pred, profit in zip(preds, self.test_df['profit']):
+            if pred == 1:
+                model_profit += profit
+
+        return {
+            'baseline_profit': float(baseline_profit),
+            'model_profit': float(model_profit),
+            'profit_improvement': float(model_profit - baseline_profit),
+            'profit_improvement_pct': ((model_profit - baseline_profit) / abs(baseline_profit) * 100) if baseline_profit != 0 else 0,
+        }
+
     def calculate_summary_metrics(self, strategy_results=None, profit_results=None):
         """Compute high level summary metrics"""
         if strategy_results is None:
