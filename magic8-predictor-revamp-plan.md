@@ -1,889 +1,732 @@
-# Magic8 Accuracy Predictor - Comprehensive Revamp Plan
+# Magic8 Accuracy Predictor - Comprehensive Revamp Plan (v2)
 
-**Created**: July 4, 2025  
-**Purpose**: Complete blueprint for improving Magic8 accuracy predictor to optimize for profit, not just accuracy
+**Updated**: July 4, 2025  
+**Purpose**: Complete blueprint for improving Magic8 accuracy predictor with corrected data processing
 
-## 🚨 Executive Summary: Critical Findings
+## 🚨 Critical Data Processing Issues Discovered
 
-### Major Discovery: Data Reality vs. Model Assumptions
-Our raw data analysis revealed **massive discrepancies** between actual performance and what the model evaluation assumes:
+### New Findings:
+1. **Data Processing is Incomplete**: Only capturing "profit" sheet data, missing crucial "trades" and "delta" sheets
+2. **Format Year Bug**: Incorrect year assignment (2023 for 2024 trades)
+3. **Missing Key Features**:
+   - Strike-by-strike breakdown (Strike1-4, Direction1-4, Type1-4)
+   - Magic8's prediction indicators (Predicted, ShortTerm, LongTerm, Target1, Target2)
+   - Delta values (CallDelta, PutDelta)
+4. **Symbol-Specific Profit Scales**: NDX butterfly ~$3,800 vs XSP/QQQ ~$50-100 (76x difference!)
 
-| Strategy | Actual Win Rate | Model Assumes | Actual Avg Win | Expected Win |
-|----------|----------------|---------------|----------------|--------------|
-| Butterfly | **52.9%** ✅ | 24.9% ❌ | $765 | $2,000 |
-| Iron Condor | **92.1%** ✅ | 45.9% ❌ | $868 | $50 |
-| Sonar | **80.2%** ✅ | 39.0% ❌ | $55 | $90 |
-| Vertical | **81.9%** ✅ | 41.7% ❌ | $50 | $100 |
+### Impact:
+- Current model is missing critical predictive features
+- Cannot properly model per-symbol profit patterns
+- Evaluation metrics are based on incomplete data
 
-### Key Insights:
-1. **Overall system is highly profitable**: 76.4% win rate, $293.6M profit on 1.1M trades
-2. **Trades appear to be managed**: Profits/losses are much smaller than theoretical max
-3. **Model evaluation is fundamentally broken**: Using wrong assumptions about win rates and profit profiles
-4. **Current 88% accuracy might be misleading**: Not optimized for actual profit patterns
+## 📊 Phase 0: Complete Data Processing Rebuild [3-4 days] - NEW PRIORITY
 
-## 📊 Phase 0: Data Validation & Understanding [COMPLETED]
+### 0.1 Fix process_magic8_data_optimized_v2.py
 
-### 0.1 Raw Data Analysis Results
-```
-Total Trades: 1,531,500
-Trades with Profit Data: 1,087,160 (71.0%)
-Overall Win Rate: 76.4%
-Total Profit: $293,592,841.23
-Average Profit per Trade: $270.05
-```
+**Key Changes Required**:
 
-### 0.2 Critical Questions Answered
-1. **Why are profits different from expected?**
-   - These appear to be MANAGED trades, not held to expiration
-   - Positions are closed early for smaller profits/losses
-   - This is actually GOOD - shows active risk management
-
-2. **Is the data reliable?**
-   - Yes, but it represents actual executed trades, not theoretical outcomes
-   - 71% have profit data (good coverage)
-   - Consistent patterns across 2.5 years
-
-### 0.3 New Understanding of Profit Profiles
-Instead of fixed win/loss amounts, we have distributions:
-
-**Butterfly** (52.9% win rate):
-- Typical wins: $40-$765 range
-- Typical losses: $-5 to $-393 range
-- Expected value: $219 per trade
-
-**Iron Condor** (92.1% win rate):
-- Typical wins: $5-$868 range  
-- Typical losses: $-87 to $-412 range
-- Expected value: $767 per trade
-
-## 🔧 Phase 1: Fix Model Evaluation [1-2 days]
-
-### 1.1 Fix Baseline Profit Calculation
-
-**File**: `src/models/xgboost_baseline.py`
-
-**Current Problem**: Baseline assumes "always predict majority class" which gives $0 profit
 ```python
-# WRONG - This is what's currently there:
-baseline_pred = 1 if y_strategy.mean() > 0.5 else 0
-```
-
-**Fix**: Calculate profit from taking ALL trades
-```python
-def evaluate_profit_impact(self):
-    """Evaluate model performance weighted by profit potential"""
-    
-    # ... existing code ...
-    
-    for strategy_col in [c for c in self.test_df.columns if c.startswith('strategy_')]:
-        name = strategy_col.replace('strategy_', '')
-        mask = self.test_df[strategy_col] == 1
-        if mask.sum() == 0:
-            continue
+class Magic8DataProcessorOptimized:
+    def __init__(self, source_path: str, output_path: str, batch_size: int = 1000):
+        # ... existing code ...
+        
+        # EXPANDED column order to include all sheets
+        self.column_order = [
+            # Time/Identity columns
+            'date', 'time', 'timestamp', 'symbol', 'strategy',
             
-        y_strategy = self.y_test[mask]
-        X_strategy = self.X_test[mask]
+            # From profit sheet
+            'price', 'premium', 'predicted', 'closed', 'expired', 
+            'risk', 'reward', 'ratio', 'profit', 'win',
+            
+            # From trades sheet (NEW)
+            'source', 'expected_move', 'low', 'high', 
+            'target1', 'target2', 'predicted_trades', 'closing',
+            'strike1', 'direction1', 'type1', 'bid1', 'ask1', 'mid1',
+            'strike2', 'direction2', 'type2', 'bid2', 'ask2', 'mid2',
+            'strike3', 'direction3', 'type3', 'bid3', 'ask3', 'mid3',
+            'strike4', 'direction4', 'type4', 'bid4', 'ask4', 'mid4',
+            
+            # From delta sheet (NEW)
+            'call_delta', 'put_delta', 'predicted_delta', 
+            'short_term', 'long_term', 'closing_delta',
+            
+            # Metadata
+            'trade_description', 'source_file', 'format_year'
+        ]
         
-        # Get predictions
-        dtest = xgb.DMatrix(X_strategy)
-        y_pred = (self.model.predict(dtest) > 0.5).astype(int)
+    def process_folder(self, folder: Path):
+        """Process all files in a single date folder"""
+        # Extract date from folder name
+        folder_date = self.extract_date_from_folder(folder.name)
+        if not folder_date:
+            return
         
-        # CORRECT baseline: profit from taking ALL trades
-        baseline_wins = y_strategy.sum()
-        baseline_losses = len(y_strategy) - baseline_wins
-        
-        # Use ACTUAL average profits from data analysis
-        actual_profiles = {
-            'Butterfly': {'avg_win': 765, 'avg_loss': -393},
-            'Iron Condor': {'avg_win': 868, 'avg_loss': -412},
-            'Sonar': {'avg_win': 55, 'avg_loss': -213},
-            'Vertical': {'avg_win': 50, 'avg_loss': -209}
+        # Get all CSV files
+        files = {
+            'profit': None,
+            'delta': None,
+            'trades': None
         }
         
-        profile = actual_profiles.get(name, {'avg_win': 100, 'avg_loss': -100})
-        baseline_profit = baseline_wins * profile['avg_win'] + baseline_losses * profile['avg_loss']
+        for file_path in folder.glob('*.csv'):
+            if 'profit' in file_path.name:
+                files['profit'] = file_path
+            elif 'delta' in file_path.name:
+                files['delta'] = file_path
+            elif 'trades' in file_path.name:
+                files['trades'] = file_path
         
-        # Model profit (only trades taken)
-        true_positives = ((y_pred == 1) & (y_strategy == 1)).sum()
-        false_positives = ((y_pred == 1) & (y_strategy == 0)).sum()
-        model_profit = true_positives * profile['avg_win'] + false_positives * profile['avg_loss']
+        # Process all three files and merge data
+        trades_data = {}
         
-        # Log results
-        print(f"\n{name} Profit Analysis:")
-        print(f"  Baseline (all trades): ${baseline_profit:,.0f}")
-        print(f"  Model (selective): ${model_profit:,.0f}")
-        print(f"  Improvement: ${model_profit - baseline_profit:,.0f}")
-```
-
-### 1.2 Update Strategy-Specific Metrics
-
-**File**: `src/models/xgboost_baseline.py`
-
-Update `evaluate_by_strategy_enhanced()` to use actual win rates:
-```python
-def evaluate_by_strategy_enhanced(self):
-    """Enhanced evaluation accounting for actual performance"""
+        # 1. Process profit file (base data)
+        if files['profit']:
+            profit_trades = self.process_profit_file(files['profit'], folder_date)
+            for trade in profit_trades:
+                key = self._create_trade_key(trade)
+                trades_data[key] = trade
+        
+        # 2. Enhance with trades file data
+        if files['trades']:
+            trades_info = self.process_trades_file_enhanced(files['trades'], folder_date)
+            for trade in trades_info:
+                key = self._create_trade_key(trade)
+                if key in trades_data:
+                    # Merge trades data into existing record
+                    trades_data[key].update(trade)
+                else:
+                    # New trade not in profit file
+                    trades_data[key] = trade
+        
+        # 3. Add delta sheet data (applies to all trades for that time)
+        if files['delta']:
+            delta_data = self.process_delta_file(files['delta'], folder_date)
+            # Apply delta data to all trades at matching times
+            for key, trade in trades_data.items():
+                time_key = f"{trade['date']} {trade['time']}"
+                if time_key in delta_data:
+                    trade.update(delta_data[time_key])
+        
+        # Add all merged trades to batch
+        for trade in trades_data.values():
+            self.validate_and_add_trade(trade, str(folder))
     
-    # Add comparison to actual win rates
-    ACTUAL_WIN_RATES = {
-        'Butterfly': 0.529,
-        'Iron Condor': 0.921,
-        'Sonar': 0.802,
-        'Vertical': 0.819
-    }
+    def _create_trade_key(self, trade: Dict) -> str:
+        """Create unique key for trade matching"""
+        return f"{trade.get('date')}_{trade.get('time')}_{trade.get('symbol')}_{trade.get('strategy')}"
     
-    # ... existing code ...
-    
-    # Add actual vs predicted comparison
-    print(f"  Actual Win Rate: {ACTUAL_WIN_RATES[strategy_name]:.1%}")
-    print(f"  Model's Predicted Win Rate: {predicted_win_rate:.1%}")
-```
-
-### 1.3 Create Profit-Based Confusion Matrix
-
-**New file**: `src/evaluation/profit_confusion_matrix.py`
-```python
-"""
-Profit-based confusion matrix for better evaluation
-"""
-import numpy as np
-import pandas as pd
-from typing import Dict, Tuple
-
-class ProfitConfusionMatrix:
-    """Evaluate predictions based on profit impact, not just accuracy"""
-    
-    def __init__(self, actual_profit_profiles: Dict):
-        self.profit_profiles = actual_profit_profiles
+    def process_trades_file_enhanced(self, file_path: Path, folder_date: datetime):
+        """Process trades file with full strike breakdown"""
+        trades = []
         
-    def calculate(self, y_true, y_pred, strategy: str) -> Dict:
-        """Calculate profit-based confusion matrix"""
-        
-        profile = self.profit_profiles[strategy]
-        
-        # Standard confusion matrix elements
-        tp = ((y_pred == 1) & (y_true == 1)).sum()
-        fp = ((y_pred == 1) & (y_true == 0)).sum()
-        tn = ((y_pred == 0) & (y_true == 0)).sum()
-        fn = ((y_pred == 0) & (y_true == 1)).sum()
-        
-        # Profit impact of each quadrant
-        tp_profit = tp * profile['avg_win']  # Correctly took winning trades
-        fp_loss = fp * profile['avg_loss']   # Incorrectly took losing trades
-        tn_saved = tn * abs(profile['avg_loss'])  # Correctly avoided losses
-        fn_missed = fn * profile['avg_win']  # Missed winning trades
-        
-        # Total model profit/loss
-        model_profit = tp_profit + fp_loss
-        opportunity_cost = fn_missed  # Profit we could have made
-        
-        # Key metrics
-        precision_profit = tp_profit / (tp_profit + abs(fp_loss)) if (tp + fp) > 0 else 0
-        recall_profit = tp_profit / (tp_profit + fn_missed) if (tp + fn) > 0 else 0
-        
-        return {
-            'confusion_matrix': {
-                'tp': tp, 'fp': fp, 'tn': tn, 'fn': fn
-            },
-            'profit_matrix': {
-                'tp_profit': tp_profit,
-                'fp_loss': fp_loss,
-                'tn_saved': tn_saved,
-                'fn_missed': fn_missed
-            },
-            'metrics': {
-                'total_profit': model_profit,
-                'opportunity_cost': opportunity_cost,
-                'precision_profit': precision_profit,
-                'recall_profit': recall_profit,
-                'profit_efficiency': model_profit / (model_profit + opportunity_cost)
-            }
-        }
-```
-
-## 📈 Phase 2: Strategy-Specific Threshold Optimization [2-3 days]
-
-### 2.1 Threshold Optimizer with Actual Data
-
-**File**: `src/optimization/strategy_threshold_optimizer.py`
-```python
-"""
-Optimize decision thresholds based on actual profit distributions
-"""
-import numpy as np
-import pandas as pd
-from sklearn.metrics import confusion_matrix
-import json
-from pathlib import Path
-
-class StrategyThresholdOptimizer:
-    """Optimize thresholds using ACTUAL win rates and profit distributions"""
-    
-    # Updated with ACTUAL data from analysis
-    ACTUAL_PROFILES = {
-        'Butterfly': {
-            'win_rate': 0.529,
-            'avg_win': 765,
-            'avg_loss': -393,
-            'expected_value': 219.16,
-            'profit_percentiles': {
-                5: -1007, 25: -151, 50: 14, 75: 150, 95: 1232
-            }
-        },
-        'Iron Condor': {
-            'win_rate': 0.921,
-            'avg_win': 868,
-            'avg_loss': -412,
-            'expected_value': 766.76,
-            'profit_percentiles': {
-                5: -87, 25: 6, 50: 11, 75: 40, 95: 99
-            }
-        },
-        'Sonar': {
-            'win_rate': 0.802,
-            'avg_win': 55,
-            'avg_loss': -213,
-            'expected_value': 2.27,
-            'profit_percentiles': {
-                5: -372, 25: 8, 50: 23, 75: 72, 95: 162
-            }
-        },
-        'Vertical': {
-            'win_rate': 0.819,
-            'avg_win': 50,
-            'avg_loss': -209,
-            'expected_value': 2.86,
-            'profit_percentiles': {
-                5: -374, 25: 5, 50: 17, 75: 68, 95: 155
-            }
-        }
-    }
-    
-    def find_optimal_threshold(self, y_true, y_proba, strategy, 
-                             min_trades_per_day=1, risk_tolerance='balanced'):
-        """
-        Find threshold that maximizes expected profit while maintaining minimum activity
-        
-        Args:
-            risk_tolerance: 'conservative', 'balanced', or 'aggressive'
-        """
-        profile = self.ACTUAL_PROFILES[strategy]
-        
-        # Test thresholds from 0.1 to 0.95
-        results = []
-        
-        for threshold in np.arange(0.1, 0.96, 0.01):
-            y_pred = (y_proba >= threshold).astype(int)
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            reader = csv.DictReader(f)
             
-            # Skip if too few trades
-            trade_rate = y_pred.mean()
-            if trade_rate < (min_trades_per_day / 100):  # Assuming 100 opportunities/day
-                continue
-            
-            # Calculate metrics
-            tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
-            
-            # Profit calculation using actual averages
-            total_profit = tp * profile['avg_win'] + fp * profile['avg_loss']
-            trades_taken = tp + fp
-            
-            if trades_taken > 0:
-                profit_per_trade = total_profit / trades_taken
-                win_rate = tp / trades_taken
+            for row_num, row in enumerate(reader, 2):
+                # Extract all strike information
+                trade = {
+                    'date': folder_date.strftime('%Y-%m-%d'),
+                    'time': self.clean_string(row.get('Time', '')),
+                    'source': self.clean_string(row.get('Source', '')),
+                    'symbol': self.clean_string(row.get('Symbol', '')),
+                    'strategy': self.clean_string(row.get('Name', '')),
+                    'premium': self.safe_float(row.get('Premium')),
+                    'risk': self.safe_float(row.get('Risk')),
+                    'expected_move': self.safe_float(row.get('ExpectedMove')),
+                    'low': self.safe_float(row.get('Low')),
+                    'high': self.safe_float(row.get('High')),
+                    'target1': self.safe_float(row.get('Target1')),
+                    'target2': self.safe_float(row.get('Target2')),
+                    'predicted_trades': self.safe_float(row.get('Predicted')),
+                    'closing': self.safe_float(row.get('Closing')),
+                    
+                    # Strike details (up to 4 legs)
+                    'strike1': self.safe_float(row.get('Strike1')),
+                    'direction1': self.clean_string(row.get('Direction1', '')),
+                    'type1': self.clean_string(row.get('Type1', '')),
+                    'bid1': self.safe_float(row.get('Bid1')),
+                    'ask1': self.safe_float(row.get('Ask1')),
+                    'mid1': self.safe_float(row.get('Mid1')),
+                    
+                    'strike2': self.safe_float(row.get('Strike2')),
+                    'direction2': self.clean_string(row.get('Direction2', '')),
+                    'type2': self.clean_string(row.get('Type2', '')),
+                    'bid2': self.safe_float(row.get('Bid2')),
+                    'ask2': self.safe_float(row.get('Ask2')),
+                    'mid2': self.safe_float(row.get('Mid2')),
+                    
+                    'strike3': self.safe_float(row.get('Strike3')),
+                    'direction3': self.clean_string(row.get('Direction3', '')),
+                    'type3': self.clean_string(row.get('Type3', '')),
+                    'bid3': self.safe_float(row.get('Bid3')),
+                    'ask3': self.safe_float(row.get('Ask3')),
+                    'mid3': self.safe_float(row.get('Mid3')),
+                    
+                    'strike4': self.safe_float(row.get('Strike4')),
+                    'direction4': self.clean_string(row.get('Direction4', '')),
+                    'type4': self.clean_string(row.get('Type4', '')),
+                    'bid4': self.safe_float(row.get('Bid4')),
+                    'ask4': self.safe_float(row.get('Ask4')),
+                    'mid4': self.safe_float(row.get('Mid4')),
+                    
+                    'trade_description': self.clean_string(row.get('Trade', '')),
+                    'source_file': 'trades',
+                    'format_year': folder_date.year  # FIX: Use actual folder date year
+                }
                 
-                # Risk-adjusted score
-                if risk_tolerance == 'conservative':
-                    # Prioritize high win rate and positive profit per trade
-                    score = profit_per_trade * (win_rate ** 2)
-                elif risk_tolerance == 'aggressive':
-                    # Prioritize total profit
-                    score = total_profit
-                else:  # balanced
-                    # Balance between profit and win rate
-                    score = profit_per_trade * win_rate
-                
-                results.append({
-                    'threshold': threshold,
-                    'total_profit': total_profit,
-                    'profit_per_trade': profit_per_trade,
-                    'trades_taken': trades_taken,
-                    'trade_rate': trade_rate,
-                    'win_rate': win_rate,
-                    'score': score
-                })
+                trades.append(trade)
         
-        # Find best threshold
-        if results:
-            best = max(results, key=lambda x: x['score'])
-            return best
+        return trades
+    
+    def process_delta_file(self, file_path: Path, folder_date: datetime):
+        """Process delta file for prediction indicators"""
+        delta_data = {}
+        
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            reader = csv.DictReader(f)
+            
+            for row in reader:
+                # Parse time from "When" column (format: "7/3/25 14:30")
+                when = self.clean_string(row.get('When', ''))
+                if when:
+                    # Extract time portion
+                    time_part = when.split()[-1] if ' ' in when else ''
+                    
+                    time_key = f"{folder_date.strftime('%Y-%m-%d')} {time_part}"
+                    
+                    delta_data[time_key] = {
+                        'call_delta': self.safe_float(row.get('CallDelta')),
+                        'put_delta': self.safe_float(row.get('PutDelta')),
+                        'predicted_delta': self.safe_float(row.get('Predicted')),
+                        'short_term': self.safe_float(row.get('ShortTerm')),
+                        'long_term': self.safe_float(row.get('LongTerm')),
+                        'closing_delta': self.safe_float(row.get('Closing'))
+                    }
+        
+        return delta_data
+```
+
+### 0.2 Create Symbol-Specific Data Splits
+
+```python
+def split_data_by_symbol(input_file: str, output_dir: str):
+    """Split aggregated data into symbol-specific files"""
+    
+    df = pd.read_csv(input_file)
+    symbols = df['symbol'].unique()
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    symbol_stats = {}
+    
+    for symbol in symbols:
+        symbol_df = df[df['symbol'] == symbol]
+        
+        # Save symbol-specific file
+        output_file = os.path.join(output_dir, f'{symbol}_trades.csv')
+        symbol_df.to_csv(output_file, index=False)
+        
+        # Calculate symbol-specific statistics
+        symbol_stats[symbol] = {
+            'total_trades': len(symbol_df),
+            'strategies': symbol_df['strategy'].value_counts().to_dict(),
+            'avg_profit': symbol_df['profit'].mean(),
+            'profit_by_strategy': {}
+        }
+        
+        # Profit statistics by strategy
+        for strategy in ['Butterfly', 'Iron Condor', 'Sonar', 'Vertical']:
+            strategy_data = symbol_df[symbol_df['strategy'] == strategy]
+            if len(strategy_data) > 0:
+                symbol_stats[symbol]['profit_by_strategy'][strategy] = {
+                    'count': len(strategy_data),
+                    'avg_profit': strategy_data['profit'].mean(),
+                    'win_rate': (strategy_data['profit'] > 0).mean(),
+                    'avg_win': strategy_data[strategy_data['profit'] > 0]['profit'].mean() if any(strategy_data['profit'] > 0) else 0,
+                    'avg_loss': strategy_data[strategy_data['profit'] <= 0]['profit'].mean() if any(strategy_data['profit'] <= 0) else 0
+                }
+    
+    # Save statistics
+    with open(os.path.join(output_dir, 'symbol_statistics.json'), 'w') as f:
+        json.dump(symbol_stats, f, indent=2)
+    
+    return symbol_stats
+```
+
+### 0.3 Analyze Symbol-Specific Patterns
+
+```python
+class SymbolSpecificAnalyzer:
+    """Analyze profit patterns by symbol"""
+    
+    def analyze_profit_scales(self, symbol_stats: Dict):
+        """Identify symbols with similar profit scales"""
+        
+        # Group symbols by profit scale
+        profit_groups = {
+            'large_scale': [],   # >$1000 avg butterfly profit
+            'medium_scale': [],  # $100-1000
+            'small_scale': []    # <$100
+        }
+        
+        for symbol, stats in symbol_stats.items():
+            butterfly_profit = stats['profit_by_strategy'].get('Butterfly', {}).get('avg_profit', 0)
+            
+            if abs(butterfly_profit) > 1000:
+                profit_groups['large_scale'].append(symbol)
+            elif abs(butterfly_profit) > 100:
+                profit_groups['medium_scale'].append(symbol)
+            else:
+                profit_groups['small_scale'].append(symbol)
+        
+        return profit_groups
+    
+    def recommend_model_grouping(self, profit_groups: Dict):
+        """Recommend how to group symbols for model training"""
+        
+        recommendations = {
+            'separate_models': [],  # Train individual models
+            'grouped_models': {},   # Train grouped models
+            'unified_model': []     # Can use unified model
+        }
+        
+        # Large scale symbols need separate models
+        recommendations['separate_models'] = profit_groups['large_scale']
+        
+        # Medium scale can be grouped if similar
+        if len(profit_groups['medium_scale']) > 3:
+            recommendations['grouped_models']['medium_scale'] = profit_groups['medium_scale']
         else:
-            return {'threshold': 0.5, 'error': 'No valid thresholds found'}
+            recommendations['separate_models'].extend(profit_groups['medium_scale'])
+        
+        # Small scale can use unified model
+        recommendations['unified_model'] = profit_groups['small_scale']
+        
+        return recommendations
+```
+
+## 📈 Phase 1: Feature Engineering with Complete Data [2-3 days]
+
+### 1.1 Create Magic8-Specific Features
+
+```python
+class Magic8FeatureEngineer:
+    """Extract features from Magic8's prediction logic"""
     
-    def optimize_all_strategies(self, model, X_val, y_val, strategy_df):
-        """Optimize thresholds for all strategies"""
+    def create_prediction_features(self, df):
+        """Features based on Magic8's prediction indicators"""
         
-        optimal_thresholds = {}
+        # Price target features
+        df['distance_to_target1'] = (df['target1'] - df['price']) / df['price']
+        df['distance_to_target2'] = (df['target2'] - df['price']) / df['price']
+        df['targets_spread'] = abs(df['target1'] - df['target2']) / df['price']
         
-        for strategy in self.ACTUAL_PROFILES.keys():
-            strategy_col = f'strategy_{strategy}'
-            if strategy_col not in strategy_df.columns:
+        # Prediction alignment
+        df['predicted_vs_price'] = (df['predicted_trades'] - df['price']) / df['price']
+        df['predicted_vs_closing'] = (df['predicted_trades'] - df['closing']) / df['predicted_trades']
+        
+        # Delta features
+        df['call_put_delta_spread'] = df['call_delta'] - df['put_delta']
+        df['delta_skew'] = df['call_put_delta_spread'] / df['price']
+        
+        # Short/Long term bias
+        df['short_term_bias'] = (df['short_term'] - df['price']) / df['price']
+        df['long_term_bias'] = (df['long_term'] - df['price']) / df['price']
+        df['term_structure'] = df['short_term'] - df['long_term']
+        
+        # Expected move utilization
+        df['strike_width_ratio'] = (df['high'] - df['low']) / df['expected_move']
+        
+        return df
+    
+    def create_strike_features(self, df):
+        """Features from strike structure"""
+        
+        # Butterfly-specific
+        butterfly_mask = df['strategy'] == 'Butterfly'
+        df.loc[butterfly_mask, 'butterfly_wing_width'] = (
+            (df.loc[butterfly_mask, 'strike1'] - df.loc[butterfly_mask, 'strike2']).abs()
+        )
+        df.loc[butterfly_mask, 'butterfly_symmetry'] = (
+            (df.loc[butterfly_mask, 'strike1'] - df.loc[butterfly_mask, 'strike2']) -
+            (df.loc[butterfly_mask, 'strike2'] - df.loc[butterfly_mask, 'strike3'])
+        ).abs() / df.loc[butterfly_mask, 'price']
+        
+        # Iron Condor/Sonar
+        ic_mask = df['strategy'].isin(['Iron Condor', 'Sonar'])
+        df.loc[ic_mask, 'condor_width'] = (
+            df.loc[ic_mask, 'strike1'] - df.loc[ic_mask, 'strike4']
+        ).abs()
+        df.loc[ic_mask, 'condor_call_spread'] = (
+            df.loc[ic_mask, 'strike1'] - df.loc[ic_mask, 'strike2']
+        ).abs()
+        df.loc[ic_mask, 'condor_put_spread'] = (
+            df.loc[ic_mask, 'strike3'] - df.loc[ic_mask, 'strike4']
+        ).abs()
+        
+        # Strike positioning relative to price
+        for i in range(1, 5):
+            col_name = f'strike{i}'
+            if col_name in df.columns:
+                df[f'strike{i}_moneyness'] = (df[col_name] - df['price']) / df['price']
+        
+        return df
+    
+    def create_market_microstructure_features(self, df):
+        """Features from bid-ask spreads"""
+        
+        # Average bid-ask spread across legs
+        spread_cols = []
+        for i in range(1, 5):
+            if f'bid{i}' in df.columns and f'ask{i}' in df.columns:
+                df[f'spread{i}'] = df[f'ask{i}'] - df[f'bid{i}']
+                df[f'spread_pct{i}'] = df[f'spread{i}'] / df[f'mid{i}'].replace(0, 1)
+                spread_cols.append(f'spread_pct{i}')
+        
+        if spread_cols:
+            df['avg_spread_pct'] = df[spread_cols].mean(axis=1)
+            df['max_spread_pct'] = df[spread_cols].max(axis=1)
+        
+        # Liquidity indicator
+        df['total_spread_cost'] = df[[f'spread{i}' for i in range(1, 5) if f'spread{i}' in df.columns]].sum(axis=1)
+        
+        return df
+```
+
+### 1.2 Create Symbol-Normalized Features
+
+```python
+class SymbolNormalizer:
+    """Normalize features by symbol to handle scale differences"""
+    
+    def __init__(self):
+        self.symbol_stats = {}
+    
+    def fit(self, df):
+        """Calculate symbol-specific statistics"""
+        
+        for symbol in df['symbol'].unique():
+            symbol_df = df[df['symbol'] == symbol]
+            
+            self.symbol_stats[symbol] = {
+                'price_mean': symbol_df['price'].mean(),
+                'price_std': symbol_df['price'].std(),
+                'profit_scale': {},
+                'premium_scale': {}
+            }
+            
+            # Calculate profit/premium scales by strategy
+            for strategy in ['Butterfly', 'Iron Condor', 'Sonar', 'Vertical']:
+                strategy_df = symbol_df[symbol_df['strategy'] == strategy]
+                if len(strategy_df) > 0:
+                    self.symbol_stats[symbol]['profit_scale'][strategy] = {
+                        'mean': strategy_df['profit'].mean(),
+                        'std': strategy_df['profit'].std(),
+                        'p95': strategy_df['profit'].quantile(0.95),
+                        'p05': strategy_df['profit'].quantile(0.05)
+                    }
+                    self.symbol_stats[symbol]['premium_scale'][strategy] = {
+                        'mean': strategy_df['premium'].mean(),
+                        'std': strategy_df['premium'].std()
+                    }
+    
+    def transform(self, df):
+        """Apply symbol-specific normalization"""
+        
+        df_normalized = df.copy()
+        
+        for symbol in df['symbol'].unique():
+            if symbol not in self.symbol_stats:
                 continue
+                
+            mask = df['symbol'] == symbol
+            stats = self.symbol_stats[symbol]
             
-            mask = strategy_df[strategy_col] == 1
-            if mask.sum() < 100:  # Need minimum samples
-                continue
-            
-            X_strategy = X_val[mask]
-            y_strategy = y_val[mask]
-            
-            # Get prediction probabilities
-            y_proba = model.predict_proba(X_strategy)[:, 1]
-            
-            # Find optimal threshold
-            result = self.find_optimal_threshold(
-                y_strategy, y_proba, strategy,
-                risk_tolerance='balanced'
+            # Normalize prices
+            df_normalized.loc[mask, 'price_normalized'] = (
+                (df.loc[mask, 'price'] - stats['price_mean']) / stats['price_std']
             )
             
-            optimal_thresholds[strategy] = result
-            
-            print(f"\n{strategy} Optimal Threshold:")
-            print(f"  Threshold: {result['threshold']:.3f}")
-            print(f"  Expected Profit/Trade: ${result.get('profit_per_trade', 0):.2f}")
-            print(f"  Win Rate at Threshold: {result.get('win_rate', 0):.1%}")
-            print(f"  Trades Taken: {result.get('trade_rate', 0):.1%} of opportunities")
+            # Normalize profit by strategy
+            for strategy in ['Butterfly', 'Iron Condor', 'Sonar', 'Vertical']:
+                strategy_mask = mask & (df['strategy'] == strategy)
+                if strategy in stats['profit_scale'] and strategy_mask.any():
+                    profit_stats = stats['profit_scale'][strategy]
+                    df_normalized.loc[strategy_mask, 'profit_normalized'] = (
+                        (df.loc[strategy_mask, 'profit'] - profit_stats['mean']) / 
+                        (profit_stats['std'] + 1e-6)
+                    )
+                    
+                    # Profit percentile within symbol-strategy
+                    df_normalized.loc[strategy_mask, 'profit_percentile'] = (
+                        df.loc[strategy_mask, 'profit'].rank(pct=True)
+                    )
         
-        return optimal_thresholds
+        return df_normalized
 ```
 
-### 2.2 Expected Value Decision Framework
+## 🧠 Phase 2: Symbol-Specific Model Architecture [3-4 days]
 
-**File**: `src/decision/ev_decision_maker.py`
+### 2.1 Model Strategy Decision Tree
+
 ```python
-"""
-Make trading decisions based on expected value, not just probability
-"""
-import numpy as np
-from typing import Dict, Tuple, Optional
+class SymbolModelStrategy:
+    """Determine optimal model strategy per symbol"""
+    
+    def __init__(self, symbol_stats: Dict):
+        self.symbol_stats = symbol_stats
+        
+    def determine_model_strategy(self) -> Dict:
+        """Decide which symbols need separate models"""
+        
+        strategies = {
+            'separate_models': {},
+            'grouped_models': {},
+            'scaling_factors': {}
+        }
+        
+        # Analyze profit scale differences
+        for symbol, stats in self.symbol_stats.items():
+            butterfly_avg = stats['profit_by_strategy'].get('Butterfly', {}).get('avg_profit', 0)
+            
+            # Classify by scale
+            if symbol in ['NDX', 'RUT']:  # Large indices
+                strategies['separate_models'][symbol] = {
+                    'reason': 'Large profit scale',
+                    'scale_factor': butterfly_avg / 100  # Normalize to ~100 baseline
+                }
+            elif symbol in ['SPX', 'SPY']:  # Standard indices
+                strategies['grouped_models'].setdefault('standard_indices', []).append(symbol)
+            elif symbol in ['XSP', 'QQQ']:  # Small indices
+                strategies['grouped_models'].setdefault('small_indices', []).append(symbol)
+            else:  # Individual stocks
+                strategies['grouped_models'].setdefault('stocks', []).append(symbol)
+        
+        return strategies
+```
 
-class ExpectedValueDecisionMaker:
-    """Decision maker that considers profit distributions"""
+### 2.2 Multi-Model Architecture
+
+```python
+class MultiModelPredictor:
+    """Manage multiple models for different symbols"""
     
-    def __init__(self, actual_profiles: Dict, min_ev_thresholds: Optional[Dict] = None):
-        self.profiles = actual_profiles
+    def __init__(self, model_strategy: Dict):
+        self.model_strategy = model_strategy
+        self.models = {}
+        self.scalers = {}
+        self.threshold_optimizers = {}
         
-        # Minimum EV to take trade (can be negative for high-probability trades)
-        self.min_ev_thresholds = min_ev_thresholds or {
-            'Butterfly': 50,    # Higher threshold due to high variance
-            'Iron Condor': 10,  # Low threshold, high win rate
-            'Sonar': -20,      # Can accept small negative EV due to high win rate
-            'Vertical': -10    # Similar to Sonar
-        }
+    def train_all_models(self, data_dir: str):
+        """Train appropriate models for each symbol group"""
+        
+        # Train separate models
+        for symbol, config in self.model_strategy['separate_models'].items():
+            print(f"\nTraining separate model for {symbol}")
+            
+            # Load symbol-specific data
+            symbol_data = pd.read_csv(f"{data_dir}/{symbol}_trades.csv")
+            
+            # Train model
+            model = XGBoostSymbolSpecific(symbol=symbol, scale_factor=config['scale_factor'])
+            model.train(symbol_data)
+            
+            self.models[symbol] = model
+            
+        # Train grouped models
+        for group_name, symbols in self.model_strategy['grouped_models'].items():
+            print(f"\nTraining grouped model for {group_name}: {symbols}")
+            
+            # Combine data from all symbols in group
+            group_data = []
+            for symbol in symbols:
+                symbol_data = pd.read_csv(f"{data_dir}/{symbol}_trades.csv")
+                group_data.append(symbol_data)
+            
+            combined_data = pd.concat(group_data, ignore_index=True)
+            
+            # Train model with symbol as feature
+            model = XGBoostGrouped(group_name=group_name, symbols=symbols)
+            model.train(combined_data)
+            
+            self.models[group_name] = model
     
-    def calculate_expected_value(self, win_probability: float, strategy: str) -> float:
-        """Calculate expected value using actual profit distributions"""
-        profile = self.profiles[strategy]
+    def predict(self, features: Dict, symbol: str, strategy: str) -> Dict:
+        """Route prediction to appropriate model"""
         
-        # Simple EV calculation
-        ev = win_probability * profile['avg_win'] + (1 - win_probability) * profile['avg_loss']
-        
-        # Adjust for profit distribution (use percentiles for more accurate EV)
-        if win_probability > 0.8:
-            # High confidence - use 75th percentile win
-            adjusted_win = profile['profit_percentiles'][75]
-            ev = win_probability * adjusted_win + (1 - win_probability) * profile['avg_loss']
-        elif win_probability < 0.3:
-            # Low confidence - use 25th percentile loss
-            adjusted_loss = profile['profit_percentiles'][25]
-            ev = win_probability * profile['avg_win'] + (1 - win_probability) * adjusted_loss
-        
-        return ev
-    
-    def should_take_trade(self, win_probability: float, strategy: str, 
-                         current_positions: Dict[str, int]) -> Tuple[bool, Dict]:
-        """
-        Decide whether to take trade based on EV and portfolio constraints
-        """
-        # Calculate EV
-        ev = self.calculate_expected_value(win_probability, strategy)
-        
-        # Check minimum EV threshold
-        min_ev = self.min_ev_thresholds[strategy]
-        ev_pass = ev >= min_ev
-        
-        # Portfolio constraints (max positions per strategy)
-        max_positions = {
-            'Butterfly': 5,      # Higher risk, limit exposure
-            'Iron Condor': 20,   # Lower risk, can have more
-            'Sonar': 15,        # Medium risk
-            'Vertical': 10      # Directional, limit exposure
-        }
-        
-        current = current_positions.get(strategy, 0)
-        position_available = current < max_positions[strategy]
-        
-        # Final decision
-        should_trade = ev_pass and position_available
-        
-        return should_trade, {
-            'expected_value': ev,
-            'min_ev_threshold': min_ev,
-            'ev_pass': ev_pass,
-            'position_available': position_available,
-            'current_positions': current,
-            'max_positions': max_positions[strategy],
-            'decision_reason': self._get_decision_reason(ev_pass, position_available, ev, min_ev)
-        }
-    
-    def _get_decision_reason(self, ev_pass: bool, position_available: bool, ev: float, min_ev: float) -> str:
-        if not ev_pass:
-            return f"EV ${ev:.2f} below threshold ${min_ev:.2f}"
-        elif not position_available:
-            return "Max positions reached for strategy"
+        # Find appropriate model
+        if symbol in self.models:
+            # Use symbol-specific model
+            model = self.models[symbol]
         else:
-            return f"Trade approved: EV ${ev:.2f}"
+            # Find grouped model
+            for group_name, group_symbols in self.model_strategy['grouped_models'].items():
+                if symbol in group_symbols:
+                    model = self.models[group_name]
+                    break
+            else:
+                raise ValueError(f"No model found for symbol {symbol}")
+        
+        # Make prediction
+        prediction = model.predict(features, strategy)
+        
+        # Apply symbol-specific threshold
+        threshold = self.get_optimal_threshold(symbol, strategy)
+        
+        return {
+            'win_probability': prediction['probability'],
+            'threshold': threshold,
+            'recommendation': 'TRADE' if prediction['probability'] >= threshold else 'SKIP',
+            'model_used': model.name,
+            'expected_profit': prediction.get('expected_profit', 0)
+        }
 ```
 
-## 🧠 Phase 3: Model Training Improvements [3-4 days]
+### 2.3 Symbol-Specific XGBoost Model
 
-### 3.1 Add Profit-Weighted Training
-
-**File**: `src/models/xgboost_profit_optimized.py`
 ```python
-"""
-XGBoost model optimized for profit, not accuracy
-"""
-import xgboost as xgb
-import numpy as np
-from sklearn.utils.class_weight import compute_sample_weight
-
-class XGBoostProfitOptimized:
-    """XGBoost trained with profit-based sample weights"""
+class XGBoostSymbolSpecific:
+    """XGBoost model trained for a specific symbol"""
     
-    def create_profit_based_weights(self, X, y, strategy_df):
-        """Weight samples by their profit impact"""
+    def __init__(self, symbol: str, scale_factor: float = 1.0):
+        self.symbol = symbol
+        self.scale_factor = scale_factor
+        self.name = f"XGBoost_{symbol}"
         
-        weights = np.ones(len(y))
+    def create_scaled_sample_weights(self, y_train, strategy_df):
+        """Create weights scaled by symbol-specific profit ranges"""
         
-        # Actual profit impacts from data analysis
-        profit_impacts = {
-            'Butterfly': {'win_impact': 765, 'loss_impact': 393},
-            'Iron Condor': {'win_impact': 868, 'loss_impact': 412},
-            'Sonar': {'win_impact': 55, 'loss_impact': 213},
-            'Vertical': {'win_impact': 50, 'loss_impact': 209}
-        }
+        weights = np.ones(len(y_train))
         
-        for strategy, impact in profit_impacts.items():
-            strategy_col = f'strategy_{strategy}'
-            if strategy_col not in strategy_df.columns:
-                continue
-            
-            # Find samples for this strategy
-            strategy_mask = strategy_df[strategy_col] == 1
-            
-            # Weight by profit impact
-            win_mask = strategy_mask & (y == 1)
-            loss_mask = strategy_mask & (y == 0)
-            
-            # Normalize impacts to 0-10 scale
-            max_impact = max(impact['win_impact'], impact['loss_impact'])
-            
-            weights[win_mask] = (impact['win_impact'] / max_impact) * 10
-            weights[loss_mask] = (impact['loss_impact'] / max_impact) * 10
-        
-        # Extra weight for high-value trades
-        # Butterfly wins are particularly valuable
-        butterfly_wins = (strategy_df['strategy_Butterfly'] == 1) & (y == 1)
-        weights[butterfly_wins] *= 2
-        
-        # Iron Condor losses are particularly costly
-        ic_losses = (strategy_df['strategy_Iron Condor'] == 1) & (y == 0)
-        weights[ic_losses] *= 1.5
+        # Scale weights by normalized profit impact
+        for idx, (target, row) in enumerate(zip(y_train, strategy_df.itertuples())):
+            if row.strategy == 'Butterfly':
+                # For NDX with $3800 profits, scale down to match other symbols
+                base_weight = 10 if target == 1 else 1
+                weights[idx] = base_weight / self.scale_factor
+            elif row.strategy == 'Iron Condor':
+                # IC has more consistent scaling across symbols
+                weights[idx] = 5 if target == 0 else 1  # Weight losses more
+            # ... other strategies
         
         return weights
-    
-    def train_profit_optimized(self, X_train, y_train, X_val, y_val, strategy_df_train):
-        """Train with profit optimization"""
-        
-        # Create profit-based weights
-        sample_weights = self.create_profit_based_weights(X_train, y_train, strategy_df_train)
-        
-        # Create DMatrix with weights
-        dtrain = xgb.DMatrix(X_train, label=y_train, weight=sample_weights)
-        dval = xgb.DMatrix(X_val, label=y_val)
-        
-        # Parameters optimized for profit
-        params = {
-            'objective': 'binary:logistic',
-            'eval_metric': ['auc', 'logloss'],
-            'max_depth': 8,
-            'learning_rate': 0.01,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'min_child_weight': 10,  # Higher to prevent overfitting to rare high-value trades
-            'gamma': 0.1,
-            'reg_alpha': 1.0,
-            'reg_lambda': 10.0,
-            'scale_pos_weight': 1,  # Don't use global class weight, we have sample weights
-            'random_state': 42
-        }
-        
-        # Custom evaluation function that considers profit
-        def profit_eval(preds, dtrain):
-            """Custom evaluation based on expected profit"""
-            labels = dtrain.get_label()
-            
-            # This is simplified - in production, you'd calculate actual profit
-            # based on strategy and threshold
-            threshold = 0.5
-            predictions = (preds > threshold).astype(int)
-            
-            # Simplified profit calculation
-            tp = ((predictions == 1) & (labels == 1)).sum()
-            fp = ((predictions == 1) & (labels == 0)).sum()
-            
-            # Average profit/loss across strategies
-            avg_win = 435  # Weighted average of wins
-            avg_loss = -307  # Weighted average of losses
-            
-            profit = tp * avg_win + fp * avg_loss
-            
-            # Return negative profit as XGBoost minimizes
-            return 'profit', -profit
-        
-        # Train with early stopping
-        evals = [(dtrain, 'train'), (dval, 'eval')]
-        
-        model = xgb.train(
-            params,
-            dtrain,
-            num_boost_round=2000,
-            evals=evals,
-            early_stopping_rounds=100,
-            feval=profit_eval,
-            maximize=False,
-            verbose_eval=50
-        )
-        
-        return model
 ```
 
-### 3.2 Add Strategy-Specific Features
+## 🔧 Phase 3: Model Evaluation Fixes [1-2 days]
 
-**File**: `src/feature_engineering/strategy_features.py`
+### 3.1 Fix Baseline with Complete Data
+
 ```python
-"""
-Features designed for specific strategy performance
-"""
-import pandas as pd
-import numpy as np
-
-class StrategySpecificFeatures:
-    """Add features that help predict strategy-specific outcomes"""
+def evaluate_profit_impact_corrected(model, test_data, symbol_stats):
+    """Evaluate with correct baseline using all available features"""
     
-    def add_butterfly_features(self, df):
-        """Butterfly profits from low volatility around predicted price"""
-        
-        # Price stability metrics
-        df['butterfly_price_stability'] = df['spx_close'].rolling(10).std() / df['spx_close']
-        
-        # Distance from predicted price (key for butterfly)
-        if 'pred_price' in df.columns:
-            df['butterfly_price_accuracy'] = abs(df['spx_close'] - df['pred_price']) / df['spx_close']
-            df['butterfly_within_1pct'] = (df['butterfly_price_accuracy'] < 0.01).astype(int)
-        
-        # Volatility compression
-        df['butterfly_vix_compression'] = df['vix_close'] / df['vix_close'].rolling(20).mean()
-        df['butterfly_vix_low'] = (df['vix_close'] < df['vix_close'].quantile(0.3)).astype(int)
-        
-        # Time decay benefit (butterfly benefits from time decay)
-        df['butterfly_friday'] = (df['day_of_week'] == 4).astype(int)
-        
-        return df
+    results = {}
     
-    def add_iron_condor_features(self, df):
-        """Iron Condor profits from range-bound markets"""
+    for symbol in test_data['symbol'].unique():
+        symbol_data = test_data[test_data['symbol'] == symbol]
+        symbol_results = {}
         
-        # Range-bound indicators
-        df['ic_bollinger_position'] = (
-            (df['spx_close'] - df['spx_close'].rolling(20).mean()) / 
-            (2 * df['spx_close'].rolling(20).std())
-        )
-        df['ic_near_middle'] = (abs(df['ic_bollinger_position']) < 0.5).astype(int)
-        
-        # Low momentum
-        df['ic_momentum_5d'] = df['spx_close'].pct_change(5)
-        df['ic_low_momentum'] = (abs(df['ic_momentum_5d']) < 0.01).astype(int)
-        
-        # Support/Resistance levels
-        df['ic_near_round_number'] = ((df['spx_close'] % 50) < 5).astype(int)
-        
-        # Historical range
-        df['ic_pct_rank'] = df['spx_close'].rolling(252).rank(pct=True)
-        df['ic_middle_range'] = ((df['ic_pct_rank'] > 0.3) & (df['ic_pct_rank'] < 0.7)).astype(int)
-        
-        return df
-    
-    def add_sonar_features(self, df):
-        """Sonar needs extremely tight ranges (similar to IC but tighter)"""
-        
-        # Ultra-low volatility indicators
-        df['sonar_atr_pct'] = df['spx_atr'] / df['spx_close']
-        df['sonar_ultra_low_vol'] = (df['sonar_atr_pct'] < df['sonar_atr_pct'].quantile(0.1)).astype(int)
-        
-        # Intraday range
-        if 'spx_high' in df.columns and 'spx_low' in df.columns:
-            df['sonar_intraday_range'] = (df['spx_high'] - df['spx_low']) / df['spx_close']
-            df['sonar_tight_range'] = (df['sonar_intraday_range'] < 0.003).astype(int)
-        
-        # Consecutive tight days
-        df['sonar_tight_streak'] = (
-            df['sonar_tight_range'].rolling(3).sum() >= 2
-        ).astype(int)
-        
-        return df
-    
-    def add_vertical_features(self, df):
-        """Vertical spread profits from directional moves"""
-        
-        # Trend strength indicators
-        df['vertical_trend_strength'] = (
-            df['spx_close'].rolling(5).mean() - df['spx_close'].rolling(20).mean()
-        ) / df['spx_close']
-        
-        # Momentum consistency
-        df['vertical_up_days'] = (df['spx_close'].pct_change() > 0).rolling(5).sum()
-        df['vertical_down_days'] = (df['spx_close'].pct_change() < 0).rolling(5).sum()
-        df['vertical_trend_consistency'] = abs(df['vertical_up_days'] - df['vertical_down_days']) / 5
-        
-        # Volume confirmation
-        if 'spx_volume' in df.columns:
-            df['vertical_volume_surge'] = df['spx_volume'] / df['spx_volume'].rolling(20).mean()
-            df['vertical_strong_volume'] = (df['vertical_volume_surge'] > 1.2).astype(int)
-        
-        # Break of key levels
-        df['vertical_new_high_20d'] = (
-            df['spx_close'] == df['spx_close'].rolling(20).max()
-        ).astype(int)
-        df['vertical_new_low_20d'] = (
-            df['spx_close'] == df['spx_close'].rolling(20).min()
-        ).astype(int)
-        
-        return df
-    
-    def add_all_strategy_features(self, df):
-        """Add all strategy-specific features"""
-        df = self.add_butterfly_features(df)
-        df = self.add_iron_condor_features(df)
-        df = self.add_sonar_features(df)
-        df = self.add_vertical_features(df)
-        return df
-```
-
-## 🚀 Phase 4: Implementation Plan [1 week total]
-
-### Week 1 Schedule:
-
-**Day 1-2: Fix Model Evaluation**
-- [ ] Implement corrected baseline calculation
-- [ ] Update profit profiles with actual data
-- [ ] Test new evaluation metrics
-- [ ] Create profit confusion matrix
-
-**Day 3-4: Optimize Thresholds**
-- [ ] Implement threshold optimizer with actual win rates
-- [ ] Test on validation data
-- [ ] Compare profit improvement vs baseline
-- [ ] Save optimal thresholds per strategy
-
-**Day 5-6: Enhance Model Training**  
-- [ ] Add profit-weighted training
-- [ ] Implement strategy-specific features
-- [ ] Train new model with improvements
-- [ ] Compare performance
-
-**Day 7: Integration & Testing**
-- [ ] Update prediction API with new thresholds
-- [ ] Test end-to-end pipeline
-- [ ] Create monitoring dashboard
-- [ ] Document results
-
-### 4.1 Testing Framework
-
-**File**: `tests/test_profit_optimization.py`
-```python
-import pytest
-import numpy as np
-from src.optimization.strategy_threshold_optimizer import StrategyThresholdOptimizer
-
-class TestProfitOptimization:
-    
-    def test_baseline_profit_calculation(self):
-        """Ensure baseline uses actual win rates"""
-        # Test that baseline profit > 0 for profitable strategies
-        pass
-    
-    def test_threshold_improves_profit(self):
-        """Verify optimized threshold beats baseline"""
-        # For each strategy, optimized threshold should improve profit
-        pass
-    
-    def test_ev_calculation(self):
-        """Test expected value calculations match actual data"""
-        # EV should align with historical performance
-        pass
-```
-
-### 4.2 Monitoring Dashboard
-
-**File**: `src/monitoring/performance_dashboard.py`
-```python
-"""
-Real-time monitoring of model decisions and profit
-"""
-import pandas as pd
-from datetime import datetime
-import json
-
-class PerformanceMonitor:
-    """Track model performance in production"""
-    
-    def __init__(self, log_path='logs/predictions.json'):
-        self.log_path = log_path
-        self.metrics = {
-            'predictions_made': 0,
-            'trades_taken': 0,
-            'trades_skipped': 0,
-            'by_strategy': {}
-        }
-    
-    def log_prediction(self, prediction_data):
-        """Log each prediction for analysis"""
-        
-        entry = {
-            'timestamp': datetime.now().isoformat(),
-            'symbol': prediction_data['symbol'],
-            'strategy': prediction_data['strategy'],
-            'win_probability': prediction_data['win_probability'],
-            'threshold_used': prediction_data['threshold_used'],
-            'decision': prediction_data['recommendation'],
-            'expected_value': prediction_data.get('expected_value', 0)
-        }
-        
-        # Update metrics
-        self.metrics['predictions_made'] += 1
-        if prediction_data['recommendation'] == 'TRADE':
-            self.metrics['trades_taken'] += 1
-        else:
-            self.metrics['trades_skipped'] += 1
-        
-        # Track by strategy
-        strategy = prediction_data['strategy']
-        if strategy not in self.metrics['by_strategy']:
-            self.metrics['by_strategy'][strategy] = {
-                'total': 0, 'taken': 0, 'skipped': 0,
-                'avg_win_prob': []
+        for strategy in ['Butterfly', 'Iron Condor', 'Sonar', 'Vertical']:
+            strategy_data = symbol_data[symbol_data['strategy'] == strategy]
+            if len(strategy_data) == 0:
+                continue
+            
+            # Get actual profit statistics for this symbol-strategy
+            actual_stats = symbol_stats[symbol]['profit_by_strategy'][strategy]
+            
+            # Calculate baseline (trading all)
+            baseline_profit = (
+                actual_stats['win_rate'] * actual_stats['avg_win'] + 
+                (1 - actual_stats['win_rate']) * actual_stats['avg_loss']
+            ) * len(strategy_data)
+            
+            # Calculate model profit (selective trading)
+            # ... prediction logic ...
+            
+            symbol_results[strategy] = {
+                'baseline_profit': baseline_profit,
+                'model_profit': model_profit,
+                'improvement': model_profit - baseline_profit,
+                'improvement_pct': (model_profit / baseline_profit - 1) * 100 if baseline_profit != 0 else 0
             }
         
-        self.metrics['by_strategy'][strategy]['total'] += 1
-        if prediction_data['recommendation'] == 'TRADE':
-            self.metrics['by_strategy'][strategy]['taken'] += 1
-        else:
-            self.metrics['by_strategy'][strategy]['skipped'] += 1
-        
-        self.metrics['by_strategy'][strategy]['avg_win_prob'].append(
-            prediction_data['win_probability']
-        )
-        
-        # Append to log file
-        with open(self.log_path, 'a') as f:
-            f.write(json.dumps(entry) + '\n')
+        results[symbol] = symbol_results
     
-    def get_summary_stats(self):
-        """Get summary statistics"""
-        
-        summary = {
-            'total_predictions': self.metrics['predictions_made'],
-            'trade_rate': self.metrics['trades_taken'] / max(1, self.metrics['predictions_made']),
-            'by_strategy': {}
-        }
-        
-        for strategy, stats in self.metrics['by_strategy'].items():
-            summary['by_strategy'][strategy] = {
-                'trade_rate': stats['taken'] / max(1, stats['total']),
-                'avg_win_probability': np.mean(stats['avg_win_prob']) if stats['avg_win_prob'] else 0,
-                'total_decisions': stats['total']
-            }
-        
-        return summary
+    return results
 ```
 
-## 📊 Success Metrics & KPIs
+## 📊 Phase 4: Updated Implementation Timeline [2-3 weeks total]
 
-### Primary Success Metrics:
-1. **Total Profit Improvement**: Target 50%+ improvement vs baseline (taking all trades)
-2. **Profit per Trade**: Increase average from $270 to $400+
-3. **Trade Selectivity**: Take only 60-70% of trades (the profitable ones)
+### Week 1: Data Processing & Feature Engineering
+**Days 1-3: Rebuild Data Processing**
+- [ ] Fix process_magic8_data_optimized_v2.py with all sheets
+- [ ] Create symbol-specific data splits
+- [ ] Analyze profit scale patterns
+- [ ] Document data schema
 
-### Strategy-Specific Targets:
+**Days 4-5: Feature Engineering**
+- [ ] Implement Magic8-specific features
+- [ ] Create strike structure features
+- [ ] Add market microstructure features
+- [ ] Implement symbol normalization
 
-**Butterfly** (Currently 52.9% win rate, $219 avg profit):
-- Increase win rate to 60%+ through better selection
-- Improve avg profit to $300+ per trade
-- Reduce large losses (current max loss: -$76k)
+### Week 2: Model Development
+**Days 6-8: Multi-Model Architecture**
+- [ ] Implement symbol model strategy
+- [ ] Create XGBoost symbol-specific models
+- [ ] Train grouped models
+- [ ] Implement model routing
 
-**Iron Condor** (Currently 92.1% win rate, $767 avg profit):
-- Maintain high win rate (90%+)
-- Better identify the 8% that lose big
-- Increase avg profit to $900+ per trade
+**Days 9-10: Evaluation & Optimization**
+- [ ] Fix baseline calculations with actual data
+- [ ] Optimize thresholds per symbol-strategy
+- [ ] Test profit improvements
+- [ ] Create performance dashboard
 
-**Sonar** (Currently 80.2% win rate, $2.27 avg profit):
-- This strategy barely breaks even - needs complete review
-- Either improve selection significantly or reduce allocation
-- Target: $50+ avg profit or discontinue
+### Week 3: Integration & Testing
+**Days 11-12: API Updates**
+- [ ] Update prediction API for multi-model
+- [ ] Add symbol-aware feature generation
+- [ ] Implement model selection logic
 
-**Vertical** (Currently 81.9% win rate, $2.86 avg profit):
-- Similar to Sonar - very low profit
-- Improve to $50+ avg profit through better selection
+**Days 13-14: Testing & Documentation**
+- [ ] End-to-end testing
+- [ ] Performance benchmarking
+- [ ] Documentation updates
+- [ ] Deployment preparation
 
-### Monitoring Metrics:
-- Daily trade count by strategy
-- Win rate vs prediction
-- Actual profit vs expected value
-- Model drift detection
+## 🎯 Success Metrics (Updated)
 
-## 🔑 Critical Decisions Required
+### Per-Symbol Targets:
 
-### 1. Managed vs Theoretical Trades
-**Question**: Should the model predict managed trade outcomes or theoretical max profit/loss?
-**Recommendation**: Predict managed trades (current data) as this reflects real trading
+**Large Scale (NDX, RUT)**:
+- Maintain current profit levels
+- Improve selectivity to 70-80%
+- Reduce maximum drawdowns
 
-### 2. Profit Targets
-**Question**: What profit improvement justifies the ML system?
-**Recommendation**: Minimum 30% improvement over baseline, target 50%+
+**Medium Scale (SPX, SPY)**:
+- Increase profit per trade by 50%
+- Optimize for consistency
+- Target 65-75% trade selection
 
-### 3. Strategy Mix
-**Question**: Should we continue with low-profit strategies (Sonar, Vertical)?
-**Recommendation**: Give them 1 month with new model, discontinue if no improvement
+**Small Scale (XSP, QQQ, AAPL, TSLA)**:
+- Focus on win rate improvement
+- May need different strategy mix
+- Consider discontinuing low-profit strategies
 
-### 4. Risk Tolerance
-**Question**: Optimize for maximum profit or consistent profit?
-**Recommendation**: Start with "balanced" approach, allow user configuration
+### Overall Targets:
+1. **Data Completeness**: 100% capture of all sheet data
+2. **Feature Coverage**: Use all Magic8 prediction indicators
+3. **Model Accuracy**: Appropriate to symbol scale
+4. **Profit Improvement**: 50%+ over corrected baseline
 
-## 📁 Deliverables
+## 🔑 Critical Next Steps
 
-1. **Fixed evaluation metrics** showing true baseline comparison
-2. **Optimized thresholds** for each strategy based on actual data
-3. **Retrained model** with profit-weighted samples
-4. **Production-ready API** with EV-based decisions
-5. **Monitoring dashboard** for ongoing performance tracking
-6. **Documentation** of all changes and results
+1. **Immediately**: Fix data processing to capture all sheets
+2. **Verify**: Check format_year and timestamp consistency
+3. **Analyze**: Symbol-specific profit patterns
+4. **Design**: Appropriate model architecture per symbol
+5. **Implement**: Complete feature set from Magic8's logic
 
-## 🎯 Next Immediate Steps
-
-1. **Run the fixed evaluation** to get true baseline profit
-2. **Implement threshold optimization** using actual win rates
-3. **Test profit improvement** on validation set
-4. **Deploy to production** with careful monitoring
-
-This plan addresses the fundamental issues discovered in the data analysis and provides a clear path to a profit-optimized trading system.
+This comprehensive update addresses the fundamental data issues and provides a path to symbol-aware modeling that can handle the 76x profit scale differences across symbols.
