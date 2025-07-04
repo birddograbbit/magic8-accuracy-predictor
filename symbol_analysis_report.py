@@ -4,6 +4,7 @@ import pandas as pd
 import json
 import os
 from typing import Dict
+from src.symbol_analyzer import SymbolSpecificAnalyzer
 
 
 def generate_symbol_report(input_file: str, output_dir: str) -> Dict:
@@ -36,6 +37,15 @@ def generate_symbol_report(input_file: str, output_dir: str) -> Dict:
     out_file = os.path.join(output_dir, 'symbol_profit_report.json')
     with open(out_file, 'w') as f:
         json.dump(report, f, indent=2)
+
+    # Recommend model grouping using SymbolSpecificAnalyzer
+    analyzer = SymbolSpecificAnalyzer()
+    groups = analyzer.analyze_profit_scales(report)
+    recommendations = analyzer.recommend_model_grouping(groups)
+
+    with open(os.path.join(output_dir, 'model_grouping.json'), 'w') as f:
+        json.dump(recommendations, f, indent=2)
+
     return report
 
 

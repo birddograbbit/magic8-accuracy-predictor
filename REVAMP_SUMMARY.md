@@ -21,8 +21,9 @@ The data processing is **fundamentally incomplete**:
 - Create symbol-specific data splits
 - Fix format_year bug
 - Analyze profit scales by symbol
- - **Progress**: Processor now merges all sheets with duplicate detection and
+- **Progress**: Processor now merges all sheets with duplicate detection and
    timestamp validation
+- **Progress**: Data schema documented and model grouping logic implemented
 
 ### Phase 1: Feature Engineering [2-3 days]
 - Extract Magic8's prediction indicators
