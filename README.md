@@ -96,6 +96,21 @@ python predict_trades_example.py
 - **Date Range**: Jan 2023 - Jun 2025 (2.5 years)
 - **Training samples**: 916,682
 
+## 📈 Enhanced Evaluation Metrics
+
+Simple accuracy alone can be misleading when each strategy has a different base
+win rate. The pipeline now logs per‑strategy confusion matrices, balanced
+accuracy and profit‑weighted results.
+
+Run the full pipeline to generate these metrics:
+
+```bash
+python src/models/xgboost_baseline.py
+```
+
+The summary section reports weighted balanced accuracy, average MCC and overall
+profit improvement versus a naive baseline.
+
 ## 📁 Project Structure
 
 ```
