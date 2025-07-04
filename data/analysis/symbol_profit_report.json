@@ -1,0 +1,15 @@
+{
+  "NDX": {
+    "total_trades": 2,
+    "avg_profit": 3850,
+    "avg_win": 3850,
+    "avg_loss": 0
+  },
+  "XSP": {
+    "total_trades": 2,
+    "avg_profit": 55,
+    "avg_win": 55,
+    "avg_loss": 0
+  },
+  "scale_ratio": 70
+}

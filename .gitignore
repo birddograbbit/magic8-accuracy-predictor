@@ -45,6 +45,7 @@ ENV/
 existing_data_analysis.json
 logs/
 models/
+!src/models/
 phase1_processed/
 plots/
 reports/
