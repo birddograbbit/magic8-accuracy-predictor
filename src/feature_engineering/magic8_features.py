@@ -23,6 +23,44 @@ class Magic8FeatureEngineer:
     def __init__(self):
         pass
 
+    def create_prediction_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Generate features from Magic8 prediction indicators."""
+        # Price target distances
+        if {'target1', 'price'}.issubset(df.columns):
+            df['distance_to_target1'] = (df['target1'] - df['price']) / df['price']
+        if {'target2', 'price'}.issubset(df.columns):
+            df['distance_to_target2'] = (df['target2'] - df['price']) / df['price']
+        if {'target1', 'target2', 'price'}.issubset(df.columns):
+            df['targets_spread'] = (df['target1'] - df['target2']).abs() / df['price']
+
+        # Prediction alignment
+        if {'predicted_trades', 'price'}.issubset(df.columns):
+            df['predicted_vs_price'] = (df['predicted_trades'] - df['price']) / df['price']
+        if {'predicted_trades', 'closing'}.issubset(df.columns):
+            df['predicted_vs_closing'] = (
+                df['predicted_trades'] - df['closing']
+            ) / df['predicted_trades'].replace(0, 1e-9)
+
+        # Delta relationships
+        if {'call_delta', 'put_delta'}.issubset(df.columns):
+            df['call_put_delta_spread'] = df['call_delta'] - df['put_delta']
+            if 'price' in df.columns:
+                df['delta_skew'] = df['call_put_delta_spread'] / df['price']
+
+        # Short/long term bias
+        if {'short_term', 'price'}.issubset(df.columns):
+            df['short_term_bias'] = (df['short_term'] - df['price']) / df['price']
+        if {'long_term', 'price'}.issubset(df.columns):
+            df['long_term_bias'] = (df['long_term'] - df['price']) / df['price']
+        if {'short_term', 'long_term'}.issubset(df.columns):
+            df['term_structure'] = df['short_term'] - df['long_term']
+
+        # Expected move utilisation
+        if {'high', 'low', 'expected_move'}.issubset(df.columns):
+            df['strike_width_ratio'] = (df['high'] - df['low']) / df['expected_move'].replace(0, 1e-9)
+
+        return df
+
     def add_strike_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create features describing the strike layout."""
         strike_cols = ['strike1', 'strike2', 'strike3', 'strike4']
@@ -50,6 +88,7 @@ class Magic8FeatureEngineer:
         return df
 
     def engineer(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = self.create_prediction_features(df)
         df = self.add_strike_features(df)
         df = self.add_delta_features(df)
         df = self.add_microstructure_features(df)

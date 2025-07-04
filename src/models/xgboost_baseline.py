@@ -439,6 +439,27 @@ class XGBoostBaseline:
             'profit_improvement_pct': ((model_profit - baseline_profit) / abs(baseline_profit) * 100) if baseline_profit != 0 else 0,
         }
 
+    def evaluate_profit_by_symbol(self):
+        """Compute baseline and model profit per symbol."""
+        if 'profit' not in self.test_df.columns or 'symbol' not in self.test_df.columns:
+            raise ValueError("Required columns missing from test data")
+
+        dtest = xgb.DMatrix(self.X_test)
+        preds = (self.model.predict(dtest) > 0.5).astype(int)
+        self.test_df['pred'] = preds
+        results = {}
+        for sym, group in self.test_df.groupby('symbol'):
+            baseline = group['profit'].sum()
+            model_profit = group.loc[group['pred'] == 1, 'profit'].sum()
+            results[sym] = {
+                'baseline_profit': float(baseline),
+                'model_profit': float(model_profit),
+                'profit_improvement': float(model_profit - baseline),
+            }
+
+        self.test_df = self.test_df.drop(columns=['pred'])
+        return results
+
     def calculate_summary_metrics(self, strategy_results=None, profit_results=None):
         """Compute high level summary metrics"""
         if strategy_results is None:

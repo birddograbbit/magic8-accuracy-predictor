@@ -21,6 +21,8 @@ import os
 import logging
 import pytz
 import time
+
+from src.feature_engineering.magic8_features import Magic8FeatureEngineer, SymbolNormalizer
 from validate_profit_coverage import validate_profit_data
 
 class Phase1DataPreparation:
@@ -578,7 +580,18 @@ class Phase1DataPreparation:
         self.add_price_features()
         self.add_vix_features()
         self.add_trade_features()
-        
+        # Magic8 specific prediction alignment features
+        fe = Magic8FeatureEngineer()
+        self.df = fe.engineer(self.df)
+
+        # Normalize profit columns per symbol if statistics available
+        profit_col_candidates = ['prof_profit', 'raw', 'managed', 'profit_final']
+        profit_col = next((c for c in profit_col_candidates if c in self.df.columns), None)
+        if profit_col:
+            stats_df = self.df.groupby('pred_symbol')[profit_col].agg(['mean', 'std']).reset_index().rename(columns={'pred_symbol': 'symbol'})
+            normalizer = SymbolNormalizer(stats_df)
+            self.df = normalizer.transform(self.df, [profit_col])
+
         # Create target
         self.create_target_variable()
 

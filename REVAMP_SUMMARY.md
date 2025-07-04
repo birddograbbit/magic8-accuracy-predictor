@@ -55,7 +55,9 @@ The data processing is **fundamentally incomplete**:
 1. **Fix data processing** - This blocks everything else!
 2. **Analyze symbol patterns** - Understand profit scales
 3. **Design model architecture** - Separate vs grouped models
-4. **Then** proceed with evaluation and training fixes
+4. **Implement prediction alignment features** ✅
+5. **Train symbol-specific models** (new script `train_symbol_models.py`)
+6. **Validate 76x scale handling** via `symbol_analysis_report.py`
 
 ## 💡 Expected Outcome
 - Complete data capture with all Magic8 features
