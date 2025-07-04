@@ -1,8 +1,8 @@
 # Magic8 Accuracy Predictor - Comprehensive Revamp Plan (v2)
 
-**Updated**: July 4, 2025  
+**Updated**: January 1, 2025  
 **Purpose**: Complete blueprint for improving Magic8 accuracy predictor with corrected data processing  
-**Overall Completion Status**: ~70%
+**Overall Completion Status**: ~75%
 
 ## 🚨 Critical Data Processing Issues Discovered
 
@@ -317,43 +317,53 @@ class SymbolSpecificAnalyzer: ✓ IMPLEMENTED IN src/symbol_analyzer.py
 - ✓ `recommend_model_grouping` method implemented in `src/symbol_analyzer.py`
 - ✓ Formal data schema documentation created in `docs/DATA_SCHEMA_COMPLETE.md`
 
-## 📈 Phase 1: Feature Engineering with Complete Data [2-3 days] - 60% COMPLETE
+## 📈 Phase 1: Feature Engineering with Complete Data [2-3 days] - 90% COMPLETE
 
-### 1.1 Create Magic8-Specific Features ✓ IMPROVED IMPLEMENTATION
+### 1.1 Create Magic8-Specific Features ✓ COMPLETE
 
 ```python
 class Magic8FeatureEngineer: ✓ ENHANCED
     """Extract features from Magic8's prediction logic"""
     
-    def create_prediction_features(self, df): ✗ NOT IMPLEMENTED
+    def create_prediction_features(self, df): ✓ IMPLEMENTED
         """Features based on Magic8's prediction indicators"""
         
         # Price target features
-        df['distance_to_target1'] = (df['target1'] - df['price']) / df['price']
-        df['distance_to_target2'] = (df['target2'] - df['price']) / df['price']
-        df['targets_spread'] = abs(df['target1'] - df['target2']) / df['price']
+        if {'target1', 'price'}.issubset(df.columns):
+            df['distance_to_target1'] = (df['target1'] - df['price']) / df['price']
+        if {'target2', 'price'}.issubset(df.columns):
+            df['distance_to_target2'] = (df['target2'] - df['price']) / df['price']
+        if {'target1', 'target2', 'price'}.issubset(df.columns):
+            df['targets_spread'] = abs(df['target1'] - df['target2']) / df['price']
         
         # Prediction alignment
-        df['predicted_vs_price'] = (df['predicted_trades'] - df['price']) / df['price']
-        df['predicted_vs_closing'] = (df['predicted_trades'] - df['closing']) / df['predicted_trades']
+        if {'predicted_trades', 'price'}.issubset(df.columns):
+            df['predicted_vs_price'] = (df['predicted_trades'] - df['price']) / df['price']
+        if {'predicted_trades', 'closing'}.issubset(df.columns):
+            df['predicted_vs_closing'] = (df['predicted_trades'] - df['closing']) / df['predicted_trades'].replace(0, 1e-9)
         
         # Delta features
-        df['call_put_delta_spread'] = df['call_delta'] - df['put_delta']
-        df['delta_skew'] = df['call_put_delta_spread'] / df['price']
+        if {'call_delta', 'put_delta'}.issubset(df.columns):
+            df['call_put_delta_spread'] = df['call_delta'] - df['put_delta']
+            if 'price' in df.columns:
+                df['delta_skew'] = df['call_put_delta_spread'] / df['price']
         
         # Short/Long term bias
-        df['short_term_bias'] = (df['short_term'] - df['price']) / df['price']
-        df['long_term_bias'] = (df['long_term'] - df['price']) / df['price']
-        df['term_structure'] = df['short_term'] - df['long_term']
+        if {'short_term', 'price'}.issubset(df.columns):
+            df['short_term_bias'] = (df['short_term'] - df['price']) / df['price']
+        if {'long_term', 'price'}.issubset(df.columns):
+            df['long_term_bias'] = (df['long_term'] - df['price']) / df['price']
+        if {'short_term', 'long_term'}.issubset(df.columns):
+            df['term_structure'] = df['short_term'] - df['long_term']
         
         # Expected move utilization
-        df['strike_width_ratio'] = (df['high'] - df['low']) / df['expected_move']
+        if {'high', 'low', 'expected_move'}.issubset(df.columns):
+            df['strike_width_ratio'] = (df['high'] - df['low']) / df['expected_move'].replace(0, 1e-9)
         
         return df
     
     def add_strike_features(self, df): ✓ ENHANCED
         """Features from strike structure"""
-        
         # Enhanced implementation with:
         # - strike_distance_pct: relative width of strikes
         # - avg_strike: average strike price
@@ -361,7 +371,6 @@ class Magic8FeatureEngineer: ✓ ENHANCED
         
     def add_delta_features(self, df): ✓ ENHANCED
         """Features from delta sheet indicators"""
-        
         # Enhanced implementation with:
         # - delta_diff: call_delta - put_delta
         # - delta_error: predicted_delta vs actual
@@ -369,28 +378,42 @@ class Magic8FeatureEngineer: ✓ ENHANCED
         
     def add_microstructure_features(self, df): ✓ IMPLEMENTED
         """Features from bid-ask spreads"""
-        
         # Implemented with:
         # - spread1, spread2: bid-ask spreads per leg
 ```
 
 **Current State**:
 - ✓ `Magic8FeatureEngineer` class enhanced
+- ✓ `create_prediction_features` method implemented
 - ✓ `add_strike_features` improved with comprehensive features
 - ✓ `add_delta_features` now uses delta sheet indicators
 - ✓ `add_microstructure_features` implemented
-- ✗ Still missing prediction alignment features (create_prediction_features)
+- ✓ All features integrated into Phase 1 pipeline
 
-### 1.2 Create Symbol-Normalized Features ✓ BASIC VERSION EXISTS
+### 1.2 Create Symbol-Normalized Features ✓ COMPLETE
 
 ```python
-class SymbolNormalizer: ✓ EXISTS
+class SymbolNormalizer: ✓ IMPLEMENTED
     """Normalize features by symbol to handle scale differences"""
     
-    # Basic implementation exists
+    def __init__(self, symbol_stats: pd.DataFrame):
+        self.stats = symbol_stats.set_index('symbol')
+
+    def transform(self, df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+        df = df.copy()
+        for symbol, group in df.groupby('symbol'):
+            if symbol in self.stats.index:
+                mean = self.stats.loc[symbol, 'mean']
+                std = self.stats.loc[symbol, 'std']
+                df.loc[group.index, columns] = (group[columns] - mean) / (std + 1e-9)
+        return df
 ```
 
-## 🧠 Phase 2: Symbol-Specific Model Architecture [3-4 days] - 20% COMPLETE
+**Current State**:
+- ✓ Symbol normalization implemented and integrated into Phase 1 pipeline
+- ✓ Applied to profit columns per symbol using statistics
+
+## 🧠 Phase 2: Symbol-Specific Model Architecture [3-4 days] - 25% COMPLETE
 
 ### 2.1 Model Strategy Decision Tree ✓ BASIC INFRASTRUCTURE EXISTS
 
@@ -424,34 +447,81 @@ class MultiModelPredictor: ✓ EXISTS
 
 **Current State**:
 - ✓ Basic infrastructure created
-- ✗ No actual multi-model training implemented
+- ✓ New `train_symbol_models.py` script created for training
+- ✗ No actual multi-model training implemented yet
 - ✗ No symbol-specific models trained
 - ✗ No grouped models created
 - ✗ No threshold optimization
 
-### 2.3 Symbol-Specific XGBoost Model ✗ NOT IMPLEMENTED
+### 2.3 Symbol-Specific XGBoost Model ✓ SCRIPT CREATED
 
 ```python
-class XGBoostSymbolSpecific: ✗ NOT EXISTS
-    """XGBoost model trained for a specific symbol"""
-    # Not implemented
+# train_symbol_models.py created with:
+from src.models.xgboost_symbol_specific import train_all_models
+
+def main():
+    parser = argparse.ArgumentParser(description="Train symbol specific models")
+    parser.add_argument("data_dir", help="Directory with *_trades.csv files")
+    parser.add_argument("output_dir", help="Directory to store models")
+    parser.add_argument("feature_info", help="JSON with feature names")
+    args = parser.parse_args()
+
+    train_all_models(args.data_dir, args.output_dir, Path(args.feature_info))
 ```
 
-## 🔧 Phase 3: Model Evaluation Fixes [1-2 days] - 30% COMPLETE
+## 🔧 Phase 3: Model Evaluation Fixes [1-2 days] - 50% COMPLETE
 
-### 3.1 Fix Baseline with Complete Data ✓ PARTIALLY COMPLETE
+### 3.1 Fix Baseline with Complete Data ✓ ENHANCED
 
 ```python
-def evaluate_profit_impact_corrected(model, test_data, symbol_stats): ✓ BASIC VERSION
+def evaluate_profit_impact_corrected(model, test_data, symbol_stats): ✓ IMPLEMENTED
     """Evaluate with correct baseline using all available features"""
     
-    # Basic corrected profit evaluation exists in xgboost_baseline.py
-    # But doesn't use symbol-specific statistics
+    if 'profit' not in self.test_df.columns:
+        raise ValueError("Profit column missing from test data")
+
+    baseline_profit = self.test_df['profit'].sum()
+
+    dtest = xgb.DMatrix(self.X_test)
+    preds = (self.model.predict(dtest) > 0.5).astype(int)
+    model_profit = 0.0
+
+    for pred, profit in zip(preds, self.test_df['profit']):
+        if pred == 1:
+            model_profit += profit
+
+    return {
+        'baseline_profit': float(baseline_profit),
+        'model_profit': float(model_profit),
+        'profit_improvement': float(model_profit - baseline_profit),
+        'profit_improvement_pct': ((model_profit - baseline_profit) / abs(baseline_profit) * 100) if baseline_profit != 0 else 0,
+    }
+
+def evaluate_profit_by_symbol(self): ✓ NEW METHOD
+    """Compute baseline and model profit per symbol."""
+    if 'profit' not in self.test_df.columns or 'symbol' not in self.test_df.columns:
+        raise ValueError("Required columns missing from test data")
+
+    dtest = xgb.DMatrix(self.X_test)
+    preds = (self.model.predict(dtest) > 0.5).astype(int)
+    self.test_df['pred'] = preds
+    results = {}
+    for sym, group in self.test_df.groupby('symbol'):
+        baseline = group['profit'].sum()
+        model_profit = group.loc[group['pred'] == 1, 'profit'].sum()
+        results[sym] = {
+            'baseline_profit': float(baseline),
+            'model_profit': float(model_profit),
+            'profit_improvement': float(model_profit - baseline),
+        }
+    
+    return results
 ```
 
 **Current State**:
 - ✓ `evaluate_profit_impact_corrected` method implemented
-- ✗ Doesn't use symbol-specific baselines
+- ✓ `evaluate_profit_by_symbol` method added for per-symbol analysis
+- ✗ Doesn't use symbol-specific baselines yet
 - ✗ No threshold optimization per symbol-strategy
 - ✗ No validation of handling 76x profit scales
 
@@ -466,10 +536,10 @@ def evaluate_profit_impact_corrected(model, test_data, symbol_stats): ✓ BASIC 
 - [x] Implement model grouping recommendations
 
 **Days 4-5: Feature Engineering**
-- [ ] Implement Magic8-specific prediction features
+- [x] Implement Magic8-specific prediction features
 - [x] Create strike structure features
 - [x] Add market microstructure features
-- [x] Implement symbol normalization (basic version)
+- [x] Implement symbol normalization
 
 ### Week 2: Model Development
 **Days 6-8: Multi-Model Architecture**
@@ -479,7 +549,8 @@ def evaluate_profit_impact_corrected(model, test_data, symbol_stats): ✓ BASIC 
 - [x] Implement model routing (basic version)
 
 **Days 9-10: Evaluation & Optimization**
-- [x] Fix baseline calculations with actual data (basic version)
+- [x] Fix baseline calculations with actual data
+- [x] Add per-symbol profit evaluation
 - [ ] Optimize thresholds per symbol-strategy
 - [ ] Test profit improvements
 - [ ] Create performance dashboard
@@ -517,29 +588,40 @@ def evaluate_profit_impact_corrected(model, test_data, symbol_stats): ✓ BASIC 
 
 ### Overall Targets:
 1. **Data Completeness**: ✓ 100% capture of all sheet data
-2. **Feature Coverage**: ✗ Use all Magic8 prediction indicators (partial)
-3. **Model Accuracy**: ✗ Appropriate to symbol scale
-4. **Profit Improvement**: ✗ 50%+ over corrected baseline
+2. **Feature Coverage**: ✓ Use all Magic8 prediction indicators (complete)
+3. **Model Accuracy**: ✗ Appropriate to symbol scale (pending)
+4. **Profit Improvement**: ✗ 50%+ over corrected baseline (pending)
 
 ## 🔑 Critical Next Steps
 
-1. **Implement Phase 1 Features**: 
-   - Complete prediction alignment features (create_prediction_features)
-   - Enhance feature engineering with all Magic8 indicators
-2. **Execute Phase 2**: 
-   - Train actual symbol-specific models
+1. **Train Symbol-Specific Models**: 
+   - Use the new `train_symbol_models.py` script to train models per symbol/group
    - Validate handling of 76x profit scale differences
-3. **Complete Phase 3**: 
-   - Symbol-specific baseline calculations
-   - Threshold optimization per symbol-strategy
-4. **Validate Results**: 
-   - Measure actual profit improvements
-   - Verify model performance across scales
+
+2. **Complete Phase 2 Implementation**:
+   - Move from infrastructure to actual implementation
+   - Train separate models for large scale symbols (NDX, RUT)
+   - Train grouped models for medium scale (SPX, SPY) and small scale (XSP, QQQ, stocks)
+
+3. **Optimize Thresholds Per Symbol-Strategy**:
+   - Use the per-symbol profit evaluation to optimize decision thresholds
+   - Ensure each symbol-strategy combination has appropriate thresholds
+
+4. **Validate and Measure Results**:
+   - Run comprehensive tests using the new test files
+   - Measure actual profit improvements per symbol
+   - Ensure the 76x scale differences are properly handled
+
+5. **Integration Testing**:
+   - Test the complete pipeline end-to-end
+   - Ensure API correctly routes to appropriate models
+   - Validate real-time prediction performance
 
 This comprehensive update addresses the fundamental data issues and provides a path to symbol-aware modeling that can handle the 76x profit scale differences across symbols.
 
 **Current Status Summary**:
 - ✓ Data processing and infrastructure complete
-- ✓ Basic feature engineering implemented with recent improvements
-- ✗ Advanced features and model training not implemented
+- ✓ Feature engineering complete with all Magic8 prediction features
+- ✓ Per-symbol profit evaluation implemented
+- ✗ Symbol-specific models not trained yet
 - ✗ Performance validation pending
