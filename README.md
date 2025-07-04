@@ -209,14 +209,34 @@ magic8-accuracy-predictor/
   The response includes the market data source and number of features used.
 
 ### Running Comprehensive API Tests
-Execute the scenario-driven test suite to verify prediction behaviour:
+
+#### Test Suite Overview
+The comprehensive test suite validates the ML prediction API with 130+ parameterized test cases:
 
 ```bash
+# Run all tests
 python tests/run_comprehensive_tests.py
+
+# Run with coverage report
+python -m pytest tests/test_api_comprehensive.py -v --cov=src
 ```
 
-This runs over 100 parameterized cases spanning volatility regimes,
-market sessions, strategies and symbols to ensure the API remains robust.
+#### Test Coverage
+- **Volatility Scenarios**: 4 regimes (VIX 12-35)
+  - Low (VIX=12): ~17% win probability
+  - Normal (VIX=17): ~35% win probability  
+  - Elevated (VIX=25): ~73% win probability
+  - High (VIX=35): ~95% win probability (capped)
+- **Strategies**: All 4 types (Butterfly, Iron Condor, Vertical, Sonar)
+- **Symbols**: Indices (SPX) and stocks (AAPL)
+- **Time Periods**: Market open, midday, close, after-hours
+- **Edge Cases**: Extreme premiums ($0.10 to $50.00)
+
+#### Recent Fixes (July 2025)
+- Fixed import issues in `real_time_features.py` (relative → absolute imports)
+- Updated FastAPI to use modern lifespan handlers (eliminated deprecation warnings)
+- Updated Pydantic to use `model_dump()` instead of deprecated `dict()`
+- Reduced test warnings from 135 to 1 (only third-party eventkit warning remains)
 
 ### Simplified IBKR Connection
 All components now share a single IBKR connection managed by `IBConnectionManager`.
@@ -274,7 +294,8 @@ If you see "Error 354: Requested market data is not subscribed" for symbols like
 ---
 
 **Repository**: https://github.com/birddograbbit/magic8-accuracy-predictor  
-**Last Updated**: July 2, 2025  
+**Last Updated**: July 4, 2025  
 **Phase 1 Status**: ✅ Complete - 88.21% accuracy achieved!  
+**Test Suite**: ✅ 130 parameterized tests passing  
 **Next Goal**: Real-time prediction system
 
