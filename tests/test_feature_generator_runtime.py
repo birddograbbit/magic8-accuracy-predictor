@@ -6,6 +6,19 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
+import types
+base_module = types.ModuleType('data_providers.base_provider')
+class BaseDataProvider:
+    async def connect(self) -> bool:
+        return True
+    async def disconnect(self):
+        pass
+    async def is_connected(self) -> bool:
+        return True
+base_module.BaseDataProvider = BaseDataProvider
+sys.modules['data_providers'] = types.ModuleType('data_providers')
+sys.modules['data_providers.base_provider'] = base_module
+
 from src.feature_engineering.real_time_features import RealTimeFeatureGenerator
 
 class DummyProvider:
