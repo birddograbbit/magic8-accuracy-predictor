@@ -2,7 +2,7 @@
 
 **Updated**: January 1, 2025  
 **Purpose**: Complete blueprint for improving Magic8 accuracy predictor with corrected data processing  
-**Overall Completion Status**: ~75%
+**Overall Completion Status**: ~80%
 
 ## 🚨 Critical Data Processing Issues Discovered
 
@@ -413,60 +413,127 @@ class SymbolNormalizer: ✓ IMPLEMENTED
 - ✓ Symbol normalization implemented and integrated into Phase 1 pipeline
 - ✓ Applied to profit columns per symbol using statistics
 
-## 🧠 Phase 2: Symbol-Specific Model Architecture [3-4 days] - 25% COMPLETE
+## 🧠 Phase 2: Symbol-Specific Model Architecture [3-4 days] - 65% COMPLETE
 
-### 2.1 Model Strategy Decision Tree ✓ BASIC INFRASTRUCTURE EXISTS
-
-```python
-class SymbolModelStrategy: ✓ EXISTS
-    """Determine optimal model strategy per symbol"""
-    
-    # Basic implementation exists but no actual strategy logic
-```
-
-### 2.2 Multi-Model Architecture ✓ INFRASTRUCTURE ONLY
+### 2.1 Model Strategy Decision Tree ✓ ENHANCED
 
 ```python
-class MultiModelPredictor: ✓ EXISTS
-    """Manage multiple models for different symbols"""
+class SymbolModelStrategy: ✓ ENHANCED
+    """Define mapping from symbols to model paths with default support"""
     
-    def __init__(self, model_strategy: Dict): ✓
-        self.model_strategy = model_strategy
-        self.models = {}
-        self.scalers = {}
-        self.threshold_optimizers = {}
-        
-    def train_all_models(self, data_dir: str): ✗ NOT IMPLEMENTED
-        """Train appropriate models for each symbol group"""
-        # Method doesn't exist in current implementation
-        
-    def predict(self, features: Dict, symbol: str, strategy: str) -> Dict: ✓ BASIC VERSION
-        """Route prediction to appropriate model"""
-        # Simplified version exists
+    def __init__(self, mapping: Dict[str, str]):
+        self.mapping = mapping
+        self.default = mapping.get('default')
+
+    def get_model_path(self, symbol: str) -> str:
+        return self.mapping.get(symbol)
 ```
 
 **Current State**:
-- ✓ Basic infrastructure created
-- ✓ New `train_symbol_models.py` script created for training
-- ✗ No actual multi-model training implemented yet
-- ✗ No symbol-specific models trained
-- ✗ No grouped models created
-- ✗ No threshold optimization
+- ✓ Enhanced with default model support for unseen symbols
+- ✓ Configured in config.yaml with model paths
 
-### 2.3 Symbol-Specific XGBoost Model ✓ SCRIPT CREATED
+### 2.2 Multi-Model Architecture ✓ FUNCTIONAL IMPLEMENTATION
 
 ```python
-# train_symbol_models.py created with:
-from src.models.xgboost_symbol_specific import train_all_models
+class MultiModelPredictor: ✓ ENHANCED
+    """Load and route predictions to symbol specific models"""
+    
+    def __init__(self, strategy: SymbolModelStrategy):
+        self.strategy = strategy
+        self.models: Dict[str, object] = {}
 
-def main():
-    parser = argparse.ArgumentParser(description="Train symbol specific models")
-    parser.add_argument("data_dir", help="Directory with *_trades.csv files")
-    parser.add_argument("output_dir", help="Directory to store models")
-    parser.add_argument("feature_info", help="JSON with feature names")
-    args = parser.parse_args()
+    def load_models(self): ✓ IMPLEMENTED
+        """Load all configured models including default"""
+        for sym, path in self.strategy.mapping.items():
+            if sym == 'default':
+                continue
+            if path and Path(path).exists():
+                self.models[sym] = joblib.load(path)
+        if self.strategy.default and Path(self.strategy.default).exists():
+            self.default_model = joblib.load(self.strategy.default)
+        else:
+            self.default_model = None
 
-    train_all_models(args.data_dir, args.output_dir, Path(args.feature_info))
+    def predict_proba(self, symbol: str, features): ✓ IMPLEMENTED
+        """Route to appropriate model with default fallback"""
+        model = self.models.get(symbol)
+        if model is None:
+            if self.default_model is None:
+                raise ValueError(f"No model for symbol {symbol}")
+            model = self.default_model
+        return model.predict_proba(features)
+```
+
+**Current State**:
+- ✓ Model loading and routing implemented
+- ✓ Default model fallback support added
+- ✓ Configuration integrated with config.yaml
+- ✓ Demo models configured (NDX, XSP)
+- ✗ No grouped models created yet
+- ✗ No threshold optimization
+
+### 2.3 Symbol-Specific XGBoost Model ✓ IMPLEMENTED
+
+```python
+def train_symbol_model(csv_path: Path, model_dir: Path, features: list, target: str = "target"): ✓
+    """Train XGBoost model for a specific symbol with missing feature handling"""
+    
+    df = pd.read_csv(csv_path)
+    if target not in df.columns:
+        raise ValueError(f"Target column '{target}' missing in {csv_path}")
+    
+    # Select only features that exist in the data
+    selected = [f for f in features if f in df.columns]
+    if not selected:
+        raise ValueError("No matching features found in data")
+    if len(selected) != len(features):
+        missing = set(features) - set(selected)
+        print(f"Warning: missing features {missing} in {csv_path}")
+    
+    X = df[selected]
+    y = df[target]
+    dtrain = xgb.DMatrix(X, label=y)
+    
+    params = {
+        'objective': 'binary:logistic',
+        'eval_metric': 'auc',
+        'max_depth': 4,
+        'eta': 0.1,
+        'subsample': 0.8,
+        'colsample_bytree': 0.8,
+        'random_state': 42,
+    }
+    
+    model = xgb.train(params, dtrain, num_boost_round=200)
+    
+    # Save model and feature list as pickle files
+    model_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, model_dir / f"{csv_path.stem}_model.pkl")
+    joblib.dump(selected, model_dir / f"{csv_path.stem}_features.pkl")
+    
+    return model
+```
+
+**Current State**:
+- ✓ Implementation complete with missing feature handling
+- ✓ Model persistence via pickle files
+- ✓ Demo models trained for NDX (large scale) and XSP (small scale)
+- ✗ Not all symbols have models trained yet
+
+### 2.4 Configuration ✓ UPDATED
+
+```yaml
+# config/config.yaml
+models:
+  NDX: models/demo_models/NDX_trades_model.pkl
+  XSP: models/demo_models/XSP_trades_model.pkl
+  default: models/xgboost_phase1_model.pkl
+
+prediction:
+  feature_config:
+    temporal:
+      enabled: true
 ```
 
 ## 🔧 Phase 3: Model Evaluation Fixes [1-2 days] - 50% COMPLETE
@@ -543,10 +610,10 @@ def evaluate_profit_by_symbol(self): ✓ NEW METHOD
 
 ### Week 2: Model Development
 **Days 6-8: Multi-Model Architecture**
-- [x] Implement symbol model strategy (infrastructure only)
-- [ ] Create XGBoost symbol-specific models
-- [ ] Train grouped models
-- [x] Implement model routing (basic version)
+- [x] Implement symbol model strategy with default support
+- [x] Create XGBoost symbol-specific model implementation
+- [x] Train demo models (NDX, XSP)
+- [x] Implement model routing with fallback
 
 **Days 9-10: Evaluation & Optimization**
 - [x] Fix baseline calculations with actual data
@@ -559,7 +626,7 @@ def evaluate_profit_by_symbol(self): ✓ NEW METHOD
 **Days 11-12: API Updates**
 - [x] Update prediction API for multi-model
 - [ ] Add symbol-aware feature generation
-- [x] Implement model selection logic (basic)
+- [x] Implement model selection logic with default
 
 **Days 13-14: Testing & Documentation**
 - [ ] End-to-end testing
@@ -572,16 +639,21 @@ def evaluate_profit_by_symbol(self): ✓ NEW METHOD
 ### Per-Symbol Targets:
 
 **Large Scale (NDX, RUT)**:
+- [x] Demo model trained for NDX
+- [ ] Train model for RUT
 - [ ] Maintain current profit levels
 - [ ] Improve selectivity to 70-80%
 - [ ] Reduce maximum drawdowns
 
 **Medium Scale (SPX, SPY)**:
+- [ ] Train grouped model
 - [ ] Increase profit per trade by 50%
 - [ ] Optimize for consistency
 - [ ] Target 65-75% trade selection
 
 **Small Scale (XSP, QQQ, AAPL, TSLA)**:
+- [x] Demo model trained for XSP
+- [ ] Train models for remaining symbols
 - [ ] Focus on win rate improvement
 - [ ] May need different strategy mix
 - [ ] Consider discontinuing low-profit strategies
@@ -589,33 +661,36 @@ def evaluate_profit_by_symbol(self): ✓ NEW METHOD
 ### Overall Targets:
 1. **Data Completeness**: ✓ 100% capture of all sheet data
 2. **Feature Coverage**: ✓ Use all Magic8 prediction indicators (complete)
-3. **Model Accuracy**: ✗ Appropriate to symbol scale (pending)
-4. **Profit Improvement**: ✗ 50%+ over corrected baseline (pending)
+3. **Model Accuracy**: ⏳ Appropriate to symbol scale (demo models trained)
+4. **Profit Improvement**: ✗ 50%+ over corrected baseline (pending validation)
 
 ## 🔑 Critical Next Steps
 
-1. **Train Symbol-Specific Models**: 
-   - Use the new `train_symbol_models.py` script to train models per symbol/group
-   - Validate handling of 76x profit scale differences
+1. **Complete Symbol-Specific Model Training**: 
+   - Train models for ALL symbols (currently only NDX and XSP demo models)
+   - Focus on RUT (large scale), SPX/SPY (medium scale), and remaining small scale symbols
+   - Use the `train_symbol_models.py` script with appropriate data directories
 
-2. **Complete Phase 2 Implementation**:
-   - Move from infrastructure to actual implementation
-   - Train separate models for large scale symbols (NDX, RUT)
-   - Train grouped models for medium scale (SPX, SPY) and small scale (XSP, QQQ, stocks)
+2. **Implement Grouped Models**:
+   - Create grouped model for medium scale symbols (SPX, SPY)
+   - Create grouped model for small scale symbols (QQQ, AAPL, TSLA)
+   - Test performance vs individual models
 
 3. **Optimize Thresholds Per Symbol-Strategy**:
-   - Use the per-symbol profit evaluation to optimize decision thresholds
+   - Use `optimize_thresholds.py` to find optimal decision thresholds
+   - Apply per-symbol profit evaluation results
    - Ensure each symbol-strategy combination has appropriate thresholds
 
-4. **Validate and Measure Results**:
-   - Run comprehensive tests using the new test files
-   - Measure actual profit improvements per symbol
-   - Ensure the 76x scale differences are properly handled
+4. **Validate 76x Scale Handling**:
+   - Run comprehensive tests comparing NDX vs XSP model performance
+   - Ensure profit calculations properly account for scale differences
+   - Verify model predictions are appropriate for each symbol's profit profile
 
-5. **Integration Testing**:
-   - Test the complete pipeline end-to-end
-   - Ensure API correctly routes to appropriate models
-   - Validate real-time prediction performance
+5. **Complete Integration Testing**:
+   - Test end-to-end pipeline with all symbol models
+   - Verify API correctly routes to appropriate models and falls back to default
+   - Validate real-time prediction performance across all symbols
+   - Measure actual profit improvements per symbol
 
 This comprehensive update addresses the fundamental data issues and provides a path to symbol-aware modeling that can handle the 76x profit scale differences across symbols.
 
@@ -623,5 +698,7 @@ This comprehensive update addresses the fundamental data issues and provides a p
 - ✓ Data processing and infrastructure complete
 - ✓ Feature engineering complete with all Magic8 prediction features
 - ✓ Per-symbol profit evaluation implemented
-- ✗ Symbol-specific models not trained yet
+- ✓ Symbol-specific model architecture implemented with missing feature handling
+- ✓ Demo models trained (NDX, XSP) with default fallback
+- ✗ Full model training for all symbols pending
 - ✗ Performance validation pending
