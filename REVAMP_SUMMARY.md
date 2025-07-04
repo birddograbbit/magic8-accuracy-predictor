@@ -18,9 +18,11 @@ The data processing is **fundamentally incomplete**:
 
 ### Phase 0: Rebuild Data Processing [3-4 days] - NEW TOP PRIORITY
 - Fix `process_magic8_data_optimized_v2.py` to capture ALL sheets
-- Create symbol-specific data splits  
+- Create symbol-specific data splits
 - Fix format_year bug
 - Analyze profit scales by symbol
+ - **Progress**: Processor now merges all sheets with duplicate detection and
+   timestamp validation
 
 ### Phase 1: Feature Engineering [2-3 days]
 - Extract Magic8's prediction indicators
@@ -31,6 +33,7 @@ The data processing is **fundamentally incomplete**:
 - Separate models for large symbols (NDX, RUT)
 - Grouped models for similar scales
 - Symbol-aware prediction routing
+ - **Progress**: Implemented `MultiModelPredictor` and API integration
 
 ### Phase 3: Fix Evaluation [1-2 days]
 - Use correct baselines with complete data

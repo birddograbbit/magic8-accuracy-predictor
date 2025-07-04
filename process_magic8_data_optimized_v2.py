@@ -43,12 +43,19 @@ class Magic8DataProcessorOptimized:
         self.strategies = ['Butterfly', 'Iron Condor', 'Vertical', 'Sonar']
         
         # Data quality tracking
-        # Pre-create missing_profit list for easier diagnostics
-        self.quality_issues = defaultdict(list, {"missing_profit": []})
+        # Pre-create lists for easier diagnostics
+        self.quality_issues = defaultdict(list, {
+            "missing_profit": [],
+            "duplicates": [],
+            "bad_timestamps": []
+        })
         
         # Current batch of trades
         self.current_batch = []
         self.total_trades_processed = 0
+
+        # Track unique trades to detect duplicates
+        self.seen_trade_keys = set()
         
         # Output file handle (keep open for appending)
         self.output_file = self.output_path / 'magic8_trades_complete.csv'
@@ -685,11 +692,34 @@ class Magic8DataProcessorOptimized:
         else:
             trade['win'] = None
         
+        # Detect duplicate trades using key of date/time/symbol/strategy
+        key = self._create_trade_key(trade)
+        if key in self.seen_trade_keys:
+            self.quality_issues['duplicates'].append({
+                'file': filename,
+                'key': key
+            })
+            return
+        self.seen_trade_keys.add(key)
+
         # Ensure all expected fields exist
         for field in self.column_order:
             if field not in trade:
                 trade[field] = None
-        
+
+        # Validate timestamp format and format_year
+        if trade.get('timestamp'):
+            try:
+                dt = pd.to_datetime(trade['timestamp'])
+                if dt.year != trade.get('format_year'):
+                    trade['format_year'] = dt.year
+            except Exception:
+                self.quality_issues['bad_timestamps'].append({
+                    'file': filename,
+                    'value': trade.get('timestamp')
+                })
+                trade['timestamp'] = None
+
         self.current_batch.append(trade)
     
     def safe_float(self, value: Any) -> Optional[float]:
@@ -731,7 +761,9 @@ class Magic8DataProcessorOptimized:
                 'unknown_strategies': len(self.quality_issues['unknown_strategies']),
                 'unknown_symbols': len(self.quality_issues['unknown_symbols']),
                 'folder_errors': len(self.quality_issues['folder_errors']),
-                'row_errors': len(self.quality_issues['row_errors'])
+                'row_errors': len(self.quality_issues['row_errors']),
+                'duplicates': len(self.quality_issues['duplicates']),
+                'bad_timestamps': len(self.quality_issues['bad_timestamps'])
             },
             'details': dict(self.quality_issues) if sum(len(v) for v in self.quality_issues.values()) < 1000 else {}
         }

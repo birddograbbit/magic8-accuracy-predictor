@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from data_manager import DataManager
 from feature_engineering.real_time_features import RealTimeFeatureGenerator
+from models.multi_model import SymbolModelStrategy, MultiModelPredictor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,13 +42,14 @@ class PredictionResponse(BaseModel):
     n_features: int
 
 model = None
+predictor: MultiModelPredictor | None = None
 feature_gen: RealTimeFeatureGenerator
 manager: DataManager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    global model, feature_gen, manager
+    global model, feature_gen, manager, predictor
     
     # Load config
     with open(CONFIG_PATH) as f:
@@ -56,11 +58,17 @@ async def lifespan(app: FastAPI):
     await manager.connect()
     
     feature_gen = RealTimeFeatureGenerator(manager, feature_info_path=FEATURE_INFO_PATH)
-    
-    if not os.path.exists(MODEL_PATH):
-        raise RuntimeError("Model file missing")
-    model = joblib.load(MODEL_PATH)
-    logger.info("Model loaded, feature generator ready")
+
+    # Multi-model configuration
+    model_map = cfg.get('models')
+    if model_map:
+        strategy = SymbolModelStrategy(model_map)
+        predictor = MultiModelPredictor(strategy)
+        predictor.load_models()
+        logger.info("Loaded %d symbol specific models", len(predictor.models))
+    else:
+        model = joblib.load(MODEL_PATH)
+        logger.info("Model loaded, feature generator ready")
     
     yield
     
@@ -82,13 +90,16 @@ async def market(symbol: str):
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(req: TradeRequest):
-    if model is None:
+    if model is None and predictor is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     order = req.model_dump()
     features, names = await feature_gen.generate_features(req.symbol, order)
     X = np.array([features])
-    proba = model.predict_proba(X)[0][1]
+    if predictor:
+        proba = predictor.predict_proba(req.symbol, X)[0][1]
+    else:
+        proba = model.predict_proba(X)[0][1]
     data = await manager.get_market_data(req.symbol)
 
     return PredictionResponse(

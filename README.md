@@ -1,7 +1,9 @@
 # Magic8 Accuracy Predictor
 
 ## Project Overview
-This project predicts the accuracy (win/loss) of Magic8's 0DTE options trading systems using machine learning. 
+This project predicts the accuracy (win/loss) of Magic8's 0DTE options trading systems using machine learning.
+
+**Revamp Status**: Multi-model architecture in progress with symbol specific features.
 
 **Trading Symbols**: SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA  
 **Strategies**: Butterfly, Iron Condor, Vertical, Sonar  
