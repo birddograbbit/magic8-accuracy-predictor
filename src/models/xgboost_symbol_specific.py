@@ -11,7 +11,14 @@ def train_symbol_model(csv_path: Path, model_dir: Path, features: list, target: 
     df = pd.read_csv(csv_path)
     if target not in df.columns:
         raise ValueError(f"Target column '{target}' missing in {csv_path}")
-    X = df[features]
+    # Select only features that exist in the data
+    selected = [f for f in features if f in df.columns]
+    if not selected:
+        raise ValueError("No matching features found in data")
+    if len(selected) != len(features):
+        missing = set(features) - set(selected)
+        print(f"Warning: missing features {missing} in {csv_path}")
+    X = df[selected]
     y = df[target]
     dtrain = xgb.DMatrix(X, label=y)
     params = {
@@ -25,8 +32,8 @@ def train_symbol_model(csv_path: Path, model_dir: Path, features: list, target: 
     }
     model = xgb.train(params, dtrain, num_boost_round=200)
     model_dir.mkdir(parents=True, exist_ok=True)
-    model.save_model(str(model_dir / f"{csv_path.stem}_model.json"))
-    joblib.dump(features, model_dir / f"{csv_path.stem}_features.pkl")
+    joblib.dump(model, model_dir / f"{csv_path.stem}_model.pkl")
+    joblib.dump(selected, model_dir / f"{csv_path.stem}_features.pkl")
     return model
 
 

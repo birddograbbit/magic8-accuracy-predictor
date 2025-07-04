@@ -62,12 +62,12 @@
  - [x] Prediction alignment features implemented
 
 ### For Model Architecture:
- - [ ] Separate models for NDX, RUT (large scale)
+ - [x] Separate models for NDX, RUT (large scale)
  - [ ] Grouped model for SPX, SPY (medium scale)
  - [ ] Grouped model for XSP, QQQ, stocks (small scale)
- - [ ] Profit improvements measured per symbol
- - [x] MultiModelPredictor utility implemented for routing
- - [ ] Symbol-specific models trained
+- [ ] Profit improvements measured per symbol
+- [x] Symbol-specific models trained (demo NDX & XSP)
+- [x] MultiModelPredictor utility implemented for routing
 
 ## 📈 Expected Impact
 

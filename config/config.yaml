@@ -36,12 +36,12 @@ data_source:
     client_id: 99   # Unique client ID
 
 # Prediction configuration
+models:
+  NDX: models/demo_models/NDX_trades_model.pkl
+  XSP: models/demo_models/XSP_trades_model.pkl
+  default: models/xgboost_phase1_model.pkl
+
 prediction:
-  models:
-    - name: "xgboost_phase1"
-      path: "models/xgboost_phase1_model.pkl"  # Using the wrapped model
-      symbols: ["SPX", "SPY", "RUT", "QQQ", "XSP", "NDX", "AAPL", "TSLA"]
-      version: "1.0.0"
     
   feature_config:
     temporal:
