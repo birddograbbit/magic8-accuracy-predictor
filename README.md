@@ -61,7 +61,7 @@ python ibkr_downloader.py --symbols "STOCK:SPY" --bar_sizes "5 mins" --duration 
 python src/phase1_data_preparation.py
 
 # Train XGBoost model (2-3 minutes)
-python src/models/xgboost_baseline.py
+python -m src.models.xgboost_baseline
 
 # This training command automatically saves a wrapped model for the
 # real-time predictor at `models/phase1/xgboost_model.pkl` (and a copy
@@ -105,7 +105,8 @@ accuracy and profit‑weighted results.
 Run the full pipeline to generate these metrics:
 
 ```bash
-python src/models/xgboost_baseline.py
+python -m src.models.xgboost_baseline
+
 ```
 
 The summary section reports weighted balanced accuracy, average MCC and overall
@@ -252,6 +253,16 @@ python -m pytest tests/test_api_comprehensive.py -v --cov=src
 - Updated FastAPI to use modern lifespan handlers (eliminated deprecation warnings)
 - Updated Pydantic to use `model_dump()` instead of deprecated `dict()`
 - Reduced test warnings from 135 to 1 (only third-party eventkit warning remains)
+
+### Running Comprehensive API Tests
+Execute the scenario-driven test suite to verify prediction behaviour:
+
+```bash
+python tests/run_comprehensive_tests.py
+```
+
+This runs over 100 parameterized cases spanning volatility regimes,
+market sessions, strategies and symbols to ensure the API remains robust.
 
 ### Simplified IBKR Connection
 All components now share a single IBKR connection managed by `IBConnectionManager`.
