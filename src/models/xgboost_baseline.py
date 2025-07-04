@@ -7,7 +7,15 @@ Simple and effective XGBoost classifier using readily available features.
 import pandas as pd
 import numpy as np
 import xgboost as xgb
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    balanced_accuracy_score,
+    matthews_corrcoef,
+)
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
@@ -291,6 +299,154 @@ class XGBoostBaseline:
                 results[strategy_name]['n_samples'] = int(strategy_mask.sum())  # Convert to int
         
         return results
+
+    def evaluate_by_strategy_enhanced(self):
+        """Enhanced evaluation accounting for class imbalance"""
+        self.logger.info("Evaluating performance by strategy with advanced metrics...")
+
+        results = {}
+        strategy_cols = [c for c in self.test_df.columns if c.startswith("strategy_")]
+
+        for strategy_col in strategy_cols:
+            strategy_name = strategy_col.replace("strategy_", "")
+            mask = self.test_df[strategy_col] == 1
+            if mask.sum() == 0:
+                continue
+
+            X_strategy = self.X_test[mask]
+            y_strategy = self.y_test[mask]
+
+            dtest = xgb.DMatrix(X_strategy)
+            y_pred_proba = self.model.predict(dtest)
+            y_pred = (y_pred_proba > 0.5).astype(int)
+
+            cm = confusion_matrix(y_strategy, y_pred)
+            tn, fp, fn, tp = (cm.ravel().tolist() + [0, 0, 0, 0])[:4]
+
+            accuracy = accuracy_score(y_strategy, y_pred)
+            tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
+            tnr = tn / (tn + fp) if (tn + fp) > 0 else 0
+            precision = precision_score(y_strategy, y_pred, zero_division=0)
+            balanced_acc = balanced_accuracy_score(y_strategy, y_pred)
+            mcc = matthews_corrcoef(y_strategy, y_pred) if len(np.unique(y_strategy)) > 1 else 0
+
+            win_rate = y_strategy.mean()
+            baseline_acc = max(win_rate, 1 - win_rate)
+            relative_improvement = (
+                (accuracy - baseline_acc) / (1 - baseline_acc) if baseline_acc < 1 else 0
+            )
+
+            results[strategy_name] = {
+                "n_samples": int(mask.sum()),
+                "win_rate": float(win_rate),
+                "accuracy": float(accuracy),
+                "baseline_accuracy": float(baseline_acc),
+                "relative_improvement": float(relative_improvement),
+                "balanced_accuracy": float(balanced_acc),
+                "mcc": float(mcc),
+                "tpr_recall": float(tpr),
+                "tnr_specificity": float(tnr),
+                "precision": float(precision),
+                "confusion_matrix": cm.tolist(),
+            }
+
+            self.logger.info(f"\n{strategy_name} Detailed Evaluation:")
+            self.logger.info(f"  Base Win Rate: {win_rate:.1%}")
+            self.logger.info(f"  Baseline Accuracy: {baseline_acc:.1%}")
+            self.logger.info(f"  Model Accuracy: {accuracy:.1%}")
+            self.logger.info(f"  Relative Improvement: {relative_improvement:.1%}")
+            self.logger.info(f"  Balanced Accuracy: {balanced_acc:.1%}")
+            self.logger.info(f"  MCC: {mcc:.3f}")
+
+            if win_rate > 0.7:
+                self.logger.info(f"  → Key Metric (TNR): {tnr:.1%} (catching losses)")
+            else:
+                self.logger.info(f"  → Key Metric (TPR): {tpr:.1%} (catching wins)")
+
+        return results
+
+    def evaluate_profit_impact(self):
+        """Evaluate model performance weighted by profit impact"""
+        profit_profiles = {
+            'Butterfly': {'win_profit': 2000, 'loss_cost': -100},
+            'Iron Condor': {'win_profit': 50, 'loss_cost': -450},
+            'Sonar': {'win_profit': 90, 'loss_cost': -810},
+            'Vertical': {'win_profit': 100, 'loss_cost': -300},
+        }
+
+        total_baseline = 0
+        total_model = 0
+
+        for strategy_col in [c for c in self.test_df.columns if c.startswith('strategy_')]:
+            name = strategy_col.replace('strategy_', '')
+            mask = self.test_df[strategy_col] == 1
+            if mask.sum() == 0 or name not in profit_profiles:
+                continue
+
+            y_strategy = self.y_test[mask]
+            X_strategy = self.X_test[mask]
+
+            dtest = xgb.DMatrix(X_strategy)
+            y_pred = (self.model.predict(dtest) > 0.5).astype(int)
+
+            profile = profit_profiles[name]
+
+            baseline_pred = 1 if y_strategy.mean() > 0.5 else 0
+            baseline_profit = 0
+            for actual in y_strategy:
+                if baseline_pred == 1:
+                    baseline_profit += profile['win_profit'] if actual == 1 else profile['loss_cost']
+
+            model_profit = 0
+            for pred, actual in zip(y_pred, y_strategy):
+                if pred == 1:
+                    model_profit += profile['win_profit'] if actual == 1 else profile['loss_cost']
+
+            total_baseline += baseline_profit
+            total_model += model_profit
+
+            self.logger.info(f"{name} Profit Impact:")
+            self.logger.info(f"  Baseline: ${baseline_profit:,.0f}")
+            self.logger.info(f"  Model: ${model_profit:,.0f}")
+            self.logger.info(f"  Improvement: ${model_profit - baseline_profit:,.0f}")
+
+        return {
+            'baseline_profit': total_baseline,
+            'model_profit': total_model,
+            'profit_improvement': total_model - total_baseline,
+            'profit_improvement_pct': ((total_model - total_baseline) / abs(total_baseline) * 100) if total_baseline != 0 else 0,
+        }
+
+    def calculate_summary_metrics(self, strategy_results=None, profit_results=None):
+        """Compute high level summary metrics"""
+        if strategy_results is None:
+            strategy_results = self.evaluate_by_strategy_enhanced()
+
+        total_samples = sum(r['n_samples'] for r in strategy_results.values()) or 1
+        weighted_bal_acc = sum(
+            r['balanced_accuracy'] * r['n_samples'] / total_samples for r in strategy_results.values()
+        )
+
+        avg_mcc = np.mean([r['mcc'] for r in strategy_results.values()]) if strategy_results else 0
+
+        strategies_beating_baseline = sum(1 for r in strategy_results.values() if r['relative_improvement'] > 0.1)
+
+        profit_res = profit_results or self.evaluate_profit_impact()
+
+        summary = {
+            'weighted_balanced_accuracy': float(weighted_bal_acc),
+            'average_mcc': float(avg_mcc),
+            'strategies_beating_baseline': int(strategies_beating_baseline),
+            'profit_results': profit_res,
+        }
+
+        self.logger.info("\n=== PROPER EVALUATION SUMMARY ===")
+        self.logger.info(f"Weighted Balanced Accuracy: {weighted_bal_acc:.1%}")
+        self.logger.info(f"Average MCC: {avg_mcc:.3f}")
+        self.logger.info(f"Strategies Beating Baseline: {strategies_beating_baseline}/{len(strategy_results)}")
+        self.logger.info(f"Model vs Baseline Profit: ${profit_res['profit_improvement']:,.0f} ({profit_res['profit_improvement_pct']:.1f}% improvement)")
+
+        return summary
     
     def plot_feature_importance(self, top_n=20):
         """Plot top N most important features"""
@@ -405,7 +561,12 @@ class XGBoostBaseline:
         test_metrics, test_proba = self.evaluate(self.X_test, self.y_test, 'Test')
         
         # Evaluate by strategy
-        strategy_results = self.evaluate_by_strategy()
+        strategy_results_simple = self.evaluate_by_strategy()
+        strategy_results_enhanced = self.evaluate_by_strategy_enhanced()
+
+        # Profit impact and summary metrics
+        profit_results = self.evaluate_profit_impact()
+        summary_metrics = self.calculate_summary_metrics(strategy_results_enhanced, profit_results)
         
         # Plot feature importance
         self.plot_feature_importance()
@@ -433,7 +594,10 @@ class XGBoostBaseline:
             'train_metrics': convert_to_native(train_metrics),
             'val_metrics': convert_to_native(val_metrics),
             'test_metrics': convert_to_native(test_metrics),
-            'strategy_results': convert_to_native(strategy_results)
+            'strategy_results': convert_to_native(strategy_results_simple),
+            'strategy_results_enhanced': convert_to_native(strategy_results_enhanced),
+            'profit_results': convert_to_native(profit_results),
+            'summary_metrics': convert_to_native(summary_metrics),
         }
         
         results_path = REPO_ROOT / 'models' / 'phase1' / 'results.json'
@@ -465,13 +629,20 @@ def main():
             print(f"Test {metric.replace('_', ' ').title()}: N/A")
     
     print("\nPerformance by Strategy:")
-    for strategy, metrics in results['strategy_results'].items():
+    for strategy, metrics in results['strategy_results_enhanced'].items():
         acc = metrics.get('accuracy', 'N/A')
         n_samples = metrics.get('n_samples', 0)
         if isinstance(acc, (int, float)) and not np.isnan(acc):
             print(f"  {strategy}: Accuracy={acc:.4f}, n={n_samples}")
         else:
             print(f"  {strategy}: Accuracy=N/A, n={n_samples}")
+
+    if 'summary_metrics' in results:
+        sm = results['summary_metrics']
+        print("\nWeighted Balanced Accuracy:", f"{sm['weighted_balanced_accuracy']:.4f}")
+        print("Average MCC:", f"{sm['average_mcc']:.3f}")
+        pr = sm.get('profit_results', {})
+        print("Profit Improvement:", f"${pr.get('profit_improvement',0):,.0f}")
     
     print("\n✅ Model ready for real-time predictions!")
     print("   Run 'python quick_start.py' to test predictions")

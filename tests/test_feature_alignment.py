@@ -22,6 +22,8 @@ class BaseDataProvider:
 base_module.BaseDataProvider = BaseDataProvider
 sys.modules['src.data_providers'] = types.ModuleType('src.data_providers')
 sys.modules['src.data_providers.base_provider'] = base_module
+sys.modules['data_providers'] = types.ModuleType('data_providers')
+sys.modules['data_providers.base_provider'] = base_module
 
 from src.feature_engineering.real_time_features import RealTimeFeatureGenerator
 
