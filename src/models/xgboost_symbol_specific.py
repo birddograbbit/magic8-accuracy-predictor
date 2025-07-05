@@ -209,3 +209,40 @@ def train_all_models(data_dir: str, output_dir: str, feature_info: Path = None):
             print(f"✗ Error training model for {csv_file.stem}: {e}")
             import traceback
             traceback.print_exc()
+
+
+def train_grouped_model(csv_paths: list[Path], model_dir: Path, group_name: str, features: list | None = None):
+    """Train a single model using data from multiple symbols."""
+    df_list = [pd.read_csv(p, low_memory=False) for p in csv_paths]
+    df = pd.concat(df_list, ignore_index=True)
+    tmp_file = model_dir / f"{group_name}_combined.csv"
+    df.to_csv(tmp_file, index=False)
+    try:
+        train_symbol_model(tmp_file, model_dir, features)
+        print(f"✓ Grouped model trained for {group_name}")
+    finally:
+        if tmp_file.exists():
+            tmp_file.unlink()
+
+
+def train_grouped_models(groups: dict[str, list[str]], data_dir: str, output_dir: str, feature_info: Path | None = None):
+    """Train models for each group mapping name -> [symbols]."""
+    data_dir = Path(data_dir)
+    output_dir = Path(output_dir)
+
+    features = None
+    if feature_info and feature_info.exists():
+        try:
+            with open(feature_info, "r") as f:
+                info = json.load(f)
+            features = info.get("feature_names", [])
+        except Exception as e:
+            print(f"Warning: Could not load feature_info: {e}")
+
+    for group, symbols in groups.items():
+        csv_paths = [data_dir / f"{sym}_trades.csv" for sym in symbols]
+        csv_paths = [p for p in csv_paths if p.exists()]
+        if not csv_paths:
+            print(f"No data for group {group} ({symbols})")
+            continue
+        train_grouped_model(csv_paths, output_dir, group, features)

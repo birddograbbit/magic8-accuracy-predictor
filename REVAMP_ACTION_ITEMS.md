@@ -63,9 +63,10 @@
 
 ### For Model Architecture:
  - [x] Separate models for NDX, RUT (large scale)
- - [ ] Grouped model for SPX, SPY (medium scale)
- - [ ] Grouped model for XSP, QQQ, stocks (small scale)
-- [ ] Profit improvements measured per symbol
+ - [x] Grouped model for SPX, SPY (medium scale)
+ - [x] Grouped model for XSP, QQQ, stocks (small scale)
+ - [ ] Profit improvements measured per symbol
+ - [x] Threshold optimization per symbol-strategy
 - [x] Symbol-specific models trained (demo NDX & XSP)
 - [x] MultiModelPredictor utility implemented for routing
 

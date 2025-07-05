@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optimize probability thresholds per symbol using F1 score."""
+"""Optimize probability thresholds per symbol and strategy using F1 score."""
 from pathlib import Path
 import json
 import numpy as np
@@ -7,15 +7,14 @@ import pandas as pd
 import joblib
 import xgboost as xgb
 
-from src.models.xgboost_symbol_specific import train_symbol_model
+from collections import defaultdict
 
 
-def optimize_threshold(symbol_csv: Path, model_path: Path, features: list):
-    df = pd.read_csv(symbol_csv)
+def optimize_threshold(df: pd.DataFrame, model, features: list):
+    """Return best threshold for dataframe using provided model."""
     X = df[features]
     y = df['target']
     dtest = xgb.DMatrix(X)
-    model = joblib.load(model_path)
     proba = model.predict(dtest)
     thresholds = np.arange(0.1, 0.9, 0.05)
     best = 0
@@ -32,7 +31,7 @@ def optimize_threshold(symbol_csv: Path, model_path: Path, features: list):
 def main(data_dir: str, model_dir: str):
     data_dir = Path(data_dir)
     model_dir = Path(model_dir)
-    thresholds = {}
+    thresholds = defaultdict(dict)
     for csv_file in data_dir.glob('*_trades.csv'):
         sym = csv_file.stem.split('_')[0]
         model_file = model_dir / f"{csv_file.stem}_model.pkl"
@@ -40,9 +39,15 @@ def main(data_dir: str, model_dir: str):
         if not model_file.exists():
             continue
         features = joblib.load(feature_file)
-        th = optimize_threshold(csv_file, model_file, features)
-        thresholds[sym] = th
-        print(f"{sym}: {th:.2f}")
+        df = pd.read_csv(csv_file)
+        model = joblib.load(model_file)
+        for strategy, group in df.groupby('strategy'):
+            if group['target'].nunique() < 2:
+                continue
+            th = optimize_threshold(group, model, features)
+            thresholds[sym][strategy] = th
+            print(f"{sym}-{strategy}: {th:.2f}")
+
     out_path = model_dir / 'thresholds.json'
     with open(out_path, 'w') as f:
         json.dump(thresholds, f, indent=2)
