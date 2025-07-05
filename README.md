@@ -3,28 +3,32 @@
 ## Project Overview
 This project predicts the accuracy (win/loss) of Magic8's 0DTE options trading systems using machine learning.
 
-**Revamp Status**: Multi-model architecture in progress with symbol-specific features. New approach trains individual XGBoost models for each trading symbol (SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA) to capture unique market dynamics.
+**Revamp Status**: Multi-model architecture with symbol-specific models COMPLETE! Individual XGBoost models trained for each trading symbol (SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA) to capture unique market dynamics and handle 76x profit scale differences.
 
 **Trading Symbols**: SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA  
 **Strategies**: Butterfly, Iron Condor, Vertical, Sonar  
-**Status**: ✅ Phase 1 Complete - 88.21% Test Accuracy Achieved!
+**Status**: ✅ Phase 1 Complete | ✅ Symbol-Specific Models Trained (90-94% accuracy)
 
-## 🎉 Phase 1 Successfully Completed (July 1, 2025)
+## 🎉 Symbol-Specific Models Successfully Trained (July 5, 2025)
 
 ### Outstanding Results
-- **Test Accuracy**: 88.21% (target was >60%)
-- **AUC-ROC**: 0.9497 (excellent discrimination)
-- **Training Time**: 2 minutes 29 seconds
-- **Feature Engineering**: 2-5 minutes (was 3+ hours)
-- **Data Processing**: 0.6 minutes for 1.5M trades
+- **Individual Model Accuracies**: 90-94% across all symbols
+- **AUC Scores**: 0.96-0.98 (excellent discrimination)
+- **Data Processed**: 1,076,742 trades from 620 folders
+- **Complete Data Schema**: Profit, trades, and delta sheets merged
+- **76x Profit Scale**: Properly handled (NDX $2,452 vs XSP $4.39)
 
-### Performance by Strategy
-- **Iron Condor**: 96.24% accuracy (best performer)
-- **Vertical**: 91.92% accuracy
-- **Sonar**: 88.70% accuracy  
-- **Butterfly**: 75.98% accuracy (most challenging)
+### Performance by Symbol
+- **AAPL**: 94.08% accuracy (AUC: 0.987)
+- **TSLA**: 94.04% accuracy (AUC: 0.987)
+- **RUT**: 92.07% accuracy (AUC: 0.976)
+- **SPY**: 91.48% accuracy (AUC: 0.972)
+- **QQQ**: 91.02% accuracy (AUC: 0.972)
+- **NDX**: 90.75% accuracy (AUC: 0.968)
+- **XSP**: 90.59% accuracy (AUC: 0.968)
+- **SPX**: 90.03% accuracy (AUC: 0.964)
 
-## 🚀 Quick Start Guide
+## 🚀 Complete Operational Flow (NEW)
 
 ### Step 1: Setup Environment
 ```bash
@@ -39,304 +43,197 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Step 2: Process Trade Data
+### Step 2: Process Raw Magic8 Data
 ```bash
-# Run the optimized processor (0.6 minutes for 1.5M trades)
-python process_magic8_data_optimized_v2.py
+# Run the complete data processor that merges all sheets
+./run_data_processing_v2.sh
 
-# Copy to expected location
-cp data/processed_optimized_v2/magic8_trades_complete.csv data/normalized/normalized_aggregated.csv
+# This creates: data/processed_optimized_v2/magic8_trades_complete.csv
+# Processing time: ~3.5 minutes for 1M+ trades
 ```
 
-### Step 3: Download Market Data (if needed)
+### Step 3: Split Data by Symbol
 ```bash
-# Download IBKR historical data for all symbols
-./download_phase1_data.sh
+# Create symbol-specific CSV files
+python split_data_by_symbol.py data/processed_optimized_v2/magic8_trades_complete.csv data/symbol_specific
 
-# Or download individually
-python ibkr_downloader.py --symbols "STOCK:SPY" --bar_sizes "5 mins" --duration "5 Y"
+# This creates:
+# - data/symbol_specific/SPX_trades.csv
+# - data/symbol_specific/SPY_trades.csv
+# - ... (one file per symbol)
+# - data/symbol_specific/symbol_statistics.json
 ```
 
-### Step 4: Run ML Pipeline
-
-#### Option A: Symbol-Specific Models (New Approach)
+### Step 4: Train Symbol-Specific Models
 ```bash
-# Split data by symbol into separate files
-mkdir -p data/symbol_data
-python split_data_by_symbol.py data/processed_optimized_v2/magic8_trades_complete.csv data/symbol_data
+# Create minimal feature info file (models will auto-detect features)
+echo '{"feature_names": []}' > data/symbol_specific/feature_info.json
 
 # Train individual models for each symbol
-mkdir -p models/symbol_specific
-python train_symbol_models.py data/symbol_data models/symbol_specific data/phase1_processed/feature_info.json
+python train_symbol_models.py data/symbol_specific models/individual data/symbol_specific/feature_info.json
+
+# This creates:
+# - models/individual/SPX_trades_model.pkl
+# - models/individual/SPX_trades_features.pkl
+# - ... (model and features for each symbol)
 ```
 
-#### Option B: Single Model (Original Approach)
+### Step 5: Train Grouped Models (Optional)
 ```bash
-# Feature engineering (2-5 minutes)
-python src/phase1_data_preparation.py
+# Train grouped models for symbols with similar profit scales
+python train_grouped_models.py data/symbol_specific models/grouped
 
-# Train XGBoost model (2-3 minutes)
-python -m src.models.xgboost_baseline
-
-# This training command automatically saves a wrapped model for the
-# real-time predictor at `models/phase1/xgboost_model.pkl` (and a copy
-# at `models/xgboost_phase1_model.pkl`).
+# Default groups:
+# - SPX_SPY: Medium scale symbols
+# - QQQ_AAPL_TSLA: Small scale symbols
 ```
 
-### Step 5: Make Predictions (Next Phase)
+### Step 6: Optimize Thresholds
 ```bash
-# Example prediction script (to be implemented)
-python predict_trades_example.py
+# Calculate optimal decision thresholds per symbol-strategy
+python optimize_thresholds.py data/symbol_specific models/individual
+
+# Creates: models/individual/thresholds.json
+# with thresholds like SPX-Butterfly: 0.45, SPX-IronCondor: 0.55, etc.
 ```
 
 ## 📊 Key Results
 
-### Model Performance
-- **Training Accuracy**: 85.86%
-- **Validation Accuracy**: 85.72%  
-- **Test Accuracy**: 88.21%
-- **F1 Score**: 0.8496
-- **AUC-ROC**: 0.9497
+### Symbol-Specific Profit Scales
+- **Large Scale**: NDX ($2,452 avg), RUT ($503 avg)
+- **Small Scale**: SPX ($9.67), SPY ($4.92), XSP ($4.39), QQQ ($3.93), AAPL ($12.79), TSLA ($12.86)
 
-### Top Feature Importance
-1. `pred_price` (9726.73) - Predicted price from Magic8
-2. `strategy_Butterfly` (1747.91) - Strategy indicator
-3. `pred_difference` (943.14) - Price prediction error
-4. `prof_premium` (643.03) - Trade premium
-5. `strategy_Iron Condor` (418.84) - Strategy indicator
+### Model Features (Auto-detected: 31 features)
+Including temporal features (hour, minute, day_of_week), price data, risk/reward ratios, strike information, and strategy encodings.
 
 ### Data Statistics
-- **Total trades**: 1,085,312 (with valid profit data)
-- **Win Rate**: 54.30% (realistic for trading system)
+- **Total trades**: 1,076,742 (with complete data)
 - **Date Range**: Jan 2023 - Jun 2025 (2.5 years)
-- **Training samples**: 916,682
+- **Strategies**: Butterfly (27.5%), Iron Condor (27.5%), Vertical (27.5%), Sonar (18.4%)
 
-## 📈 Enhanced Evaluation Metrics
+## 📈 Enhanced Multi-Model Architecture
 
-Simple accuracy alone can be misleading when each strategy has a different base
-win rate. The pipeline now logs per‑strategy confusion matrices, balanced
-accuracy and profit‑weighted results.
-
-Run the full pipeline to generate these metrics:
-
-```bash
-python -m src.models.xgboost_baseline
-
-```
-
-The summary section reports weighted balanced accuracy, average MCC and overall
-profit improvement versus a naive baseline.
+The new architecture handles symbol-specific characteristics:
+- **Individual Models**: Each symbol has its own XGBoost model
+- **Grouped Models**: Symbols with similar profit scales can share models
+- **Threshold Optimization**: Per-symbol-strategy thresholds for optimal decisions
+- **Scale Normalization**: Proper handling of 76x profit differences
 
 ## 📁 Project Structure
 
 ```
 magic8-accuracy-predictor/
 ├── src/
-│   ├── phase1_data_preparation.py    # Feature engineering pipeline
 │   ├── models/
-│   │   └── xgboost_baseline.py      # XGBoost model
-│   └── evaluation/                  # Performance analysis
+│   │   ├── xgboost_symbol_specific.py  # Symbol-specific training
+│   │   └── multi_model_predictor.py    # Multi-model routing
+│   └── prediction_api.py               # API with model selection
 ├── data/
-│   ├── source/                      # Original CSV files
-│   ├── normalized/                  # Processed trade data
-│   ├── ibkr/                       # Market data (5-min bars)
-│   └── phase1_processed/           # ML-ready features
+│   ├── processed_optimized_v2/         # Complete merged data
+│   └── symbol_specific/                # Per-symbol CSV files
 ├── models/
-│   └── phase1/                     # Saved trained models
-├── process_magic8_data_optimized_v2.py  # Data processor
-├── run_data_processing_v2.sh           # Processing runner
-└── download_phase1_data.sh            # IBKR data helper
+│   ├── individual/                     # Symbol-specific models
+│   └── grouped/                        # Grouped models
+├── process_magic8_data_optimized_v2.py # Data processor
+├── split_data_by_symbol.py             # Symbol splitter
+├── train_symbol_models.py              # Individual trainer
+├── train_grouped_models.py             # Grouped trainer
+└── optimize_thresholds.py              # Threshold optimizer
 ```
 
 ## 🔧 Technical Details
 
-### Data Processing Pipeline
-1. **CSV Parser**: Handles multiple profit column formats (Profit, Raw, Managed)
-2. **Strategy Extraction**: Parses from 'Name' column correctly
-3. **Batch Processing**: 5K record chunks for memory efficiency
-4. **Win/Loss Logic**: Profit > 0 = Win (1), Profit ≤ 0 = Loss (0)
+### Complete Data Processing Pipeline
+1. **Sheet Merger**: Combines profit, trades, and delta sheets by date/time/symbol
+2. **Feature Extraction**: All strike details, bid/ask spreads, delta values
+3. **Duplicate Detection**: Prevents duplicate trades in output
+4. **Format Year Fix**: Correct year assignment from folder dates
 
-### Feature Engineering (74 features)
-- **Temporal** (9): Hour, minute, day of week, cyclical encodings
-- **Price Features** (~40): Close, SMA, momentum, volatility, RSI for each symbol
-- **VIX Features** (8): Level, SMA, changes, regime  
-- **Strategy** (4): One-hot encoded
-- **Trade Features** (10): Premium, risk/reward, predicted prices
+### Symbol-Specific Models
+- **Algorithm**: XGBoost with automatic feature detection
+- **Parameters**: 200 rounds, early stopping, max_depth=4
+- **Validation**: 80/20 train-test split with stratification
+- **Features**: 31 auto-detected from raw data
 
-### Model Architecture
-- **Algorithm**: XGBoost with GPU support
-- **Parameters**: 1000 estimators, 0.1 learning rate, 6 max depth
-- **Class Balancing**: scale_pos_weight for imbalanced data
-- **Validation**: Temporal split (60/20/20) for realistic backtesting
+### Multi-Model Prediction Pipeline
+```python
+# Pseudo-code for symbol-aware predictions
+model_strategy = SymbolModelStrategy(config)
+predictor = MultiModelPredictor(model_strategy)
 
-## 🎯 Next Steps: Real-Time Predictions
-
-### Phase 2: Production System
-1. **Real-Time Feature Engineering**
-   - Connect to IBKR API for live market data
-   - Calculate technical indicators in real-time
-   - Match exact features from training
-     (`is_market_open`, `<SYMBOL>_close`, `vix_vix_change`, etc.)
-
-2. **Prediction Pipeline**
-   ```python
-   # Pseudo-code for real-time predictions
-   for order in magic8_orders:
-       features = generate_features(order, current_market_data)
-       probability = model.predict_proba(features)
-       if probability > threshold:
-           execute_trade(order)
-   ```
-
-3. **Integration Components**
- - WebSocket connection to Magic8
-  - IBKR API for market data
-  - Redis for feature caching
-  - REST API for predictions
-
-### Enabling Magic8-Companion Data API
-1. In the `Magic8-Companion` repository add the FastAPI endpoints:
-   ```bash
-   cd /path/to/Magic8-Companion
-   python ../magic8-accuracy-predictor/setup_companion_api.py
-   ```
-2. Start the companion with the API enabled:
-   ```bash
-   export M8C_ENABLE_DATA_API=true
-   python -m magic8_companion
-   ```
-3. Verify the API is running:
- ```bash
-  curl http://localhost:8765/health
-  ```
-
-### Starting the Prediction API with IBKR Fallback
-1. Ensure IBKR Gateway/TWS is running on port **7497**.
-2. Start the prediction service:
-   ```bash
-   # Recommended - use the startup script
-   python start_prediction_api.py
-   
-   # Alternative - run directly from src
-   cd src && python prediction_api.py
-   ```
-3. Verify the API is live:
-   ```bash
-   curl http://localhost:8000/
-   ```
-   The service will fetch prices from Magic8-Companion when available and fall back to IBKR directly. Data is cached for 5 minutes.
-
-### Running the Real-Time Feature API
-1. Start the new API that generates Phase‑1 features automatically:
-   ```bash
-   ./run_realtime_api.sh
-   ```
-2. Send a sample prediction request:
-   ```bash
-  curl -X POST http://localhost:8000/predict \
-        -H "Content-Type: application/json" \
-        -d '{"strategy": "Butterfly", "symbol": "SPX", "premium": 1.25, "predicted_price": 5850}'
-  ```
-  The response includes the market data source and number of features used.
-
-### Running Comprehensive API Tests
-
-#### Test Suite Overview
-The comprehensive test suite validates the ML prediction API with 130+ parameterized test cases:
-
-```bash
-# Run all tests
-python tests/run_comprehensive_tests.py
-
-# Run with coverage report
-python -m pytest tests/test_api_comprehensive.py -v --cov=src
+for order in magic8_orders:
+    model = predictor.get_model(order.symbol)
+    threshold = thresholds[order.symbol][order.strategy]
+    probability = model.predict_proba(features)
+    
+    if probability > threshold:
+        execute_trade(order)
 ```
 
-#### Test Coverage
-- **Volatility Scenarios**: 4 regimes (VIX 12-35)
-  - Low (VIX=12): ~17% win probability
-  - Normal (VIX=17): ~35% win probability  
-  - Elevated (VIX=25): ~73% win probability
-  - High (VIX=35): ~95% win probability (capped)
-- **Strategies**: All 4 types (Butterfly, Iron Condor, Vertical, Sonar)
-- **Symbols**: Indices (SPX) and stocks (AAPL)
-- **Time Periods**: Market open, midday, close, after-hours
-- **Edge Cases**: Extreme premiums ($0.10 to $50.00)
+## 🎯 Next Steps: Integration & Production
 
-#### Recent Fixes (July 2025)
-- Fixed import issues in `real_time_features.py` (relative → absolute imports)
-- Updated FastAPI to use modern lifespan handlers (eliminated deprecation warnings)
-- Updated Pydantic to use `model_dump()` instead of deprecated `dict()`
-- Reduced test warnings from 135 to 1 (only third-party eventkit warning remains)
+### 1. Complete Integration Testing
+- Test multi-model prediction pipeline
+- Validate API routing to correct models
+- Measure profit improvements with optimized thresholds
 
-### Running Comprehensive API Tests
-Execute the scenario-driven test suite to verify prediction behaviour:
+### 2. Performance Comparison
+- Individual vs grouped models
+- Measure actual profit improvements
+- Validate 76x scale handling
 
+### 3. Production Deployment
+- Real-time feature generation
+- Load balancing across models
+- Performance monitoring dashboard
+
+### API Integration
+
+#### Starting the Prediction API
 ```bash
-python tests/run_comprehensive_tests.py
+# Start with multi-model support
+python src/prediction_api.py
+
+# Verify API
+curl http://localhost:8000/
+
+# Test prediction
+curl -X POST http://localhost:8000/predict \
+     -H "Content-Type: application/json" \
+     -d '{"strategy": "Butterfly", "symbol": "SPX", "premium": 24.82, "predicted_price": 5855}'
 ```
-
-This runs over 100 parameterized cases spanning volatility regimes,
-market sessions, strategies and symbols to ensure the API remains robust.
-
-### Simplified IBKR Connection
-All components now share a single IBKR connection managed by `IBConnectionManager`.
-This singleton ensures only one active `IB` instance is used across the project.
-Providers call `IBConnectionManager.instance().get_ib()` to reuse the connection.
-
-   **Note**: If you don't have market data subscriptions for certain symbols (e.g., NDX), the system will automatically use mock data for those symbols and continue operating normally.
-
-4. **Monitoring & Feedback**
-   - Track prediction accuracy
-   - Store predictions vs outcomes
-   - Periodic model retraining
 
 ## 📚 Documentation
 
+- `magic8-predictor-revamp-plan.md` - Complete revamp blueprint
+- `REVAMP_SUMMARY.md` - Quick reference for revamp status
+- `docs/DATA_SCHEMA_COMPLETE.md` - Complete data schema after processing
 - `PROJECT_KNOWLEDGE_BASE.md` - Comprehensive project details
 - `IMPLEMENTATION_PLAN.md` - Full project roadmap
-- `PHASE1_SUMMARY.md` - Phase 1 implementation details
-- `REALTIME_INTEGRATION_GUIDE.md` - Production system guide
-- `CLEANUP_PLAN.md` - Codebase organization
-- `docs/IBKR_INDEX_FIX.md` - IBKR index contract configuration
-- `docs/MARKET_DATA_SUBSCRIPTIONS.md` - Handling market data subscription errors
 
 ## ⚡ Performance Optimizations
 
-### 100x Feature Engineering Speedup
-- **Problem**: O(n×m) time complexity with apply/lambda
-- **Solution**: `pd.merge_asof()` for O(n log m) complexity
-- **Result**: 3+ hours → 2-5 minutes
-
-### Batch Processing
-- **Problem**: Memory overflow with 1.5M records
-- **Solution**: Process in 5K record chunks
-- **Result**: Stable memory usage, 150x speedup
+### Symbol-Specific Benefits
+- **Profit Scale Handling**: 76x differences properly modeled
+- **Feature Relevance**: Each symbol uses only relevant features
+- **Threshold Optimization**: Per-symbol-strategy for maximum profit
+- **Training Efficiency**: Parallel training possible
 
 ## 🐛 Common Issues & Solutions
 
-### ImportError with required packages
-```bash
-pip install -r requirements.txt --upgrade
-```
+### Missing Raw Data
+Ensure you have the Magic8 CSV files organized by date folders with profit, trades, and delta sheets.
 
-### Memory errors during processing
-The optimized scripts handle this automatically with batch processing.
+### Empty data/symbol_specific Directory
+Run the complete pipeline: process data → split by symbol → train models
 
-### Missing IBKR data
-Run `./download_phase1_data.sh` to get all required market data.
-
-### Market Data Subscription Errors
-If you see "Error 354: Requested market data is not subscribed" for symbols like NDX:
-- The system will automatically use mock data for those symbols
-- No manual configuration needed
-- See `docs/MARKET_DATA_SUBSCRIPTIONS.md` for details
+### Feature Mismatch
+Use the minimal feature_info.json to let models auto-detect features from your data.
 
 ---
 
 **Repository**: https://github.com/birddograbbit/magic8-accuracy-predictor  
-**Last Updated**: July 4, 2025  
-**Phase 1 Status**: ✅ Complete - 88.21% accuracy achieved!  
-**Test Suite**: ✅ 130 parameterized tests passing  
-**Next Goal**: Real-time prediction system
-
+**Last Updated**: July 5, 2025  
+**Symbol Models Status**: ✅ Complete - 90-94% accuracy achieved!  
+**Revamp Progress**: ~90% Complete  
+**Next Goal**: Grouped models, threshold application, production deployment
