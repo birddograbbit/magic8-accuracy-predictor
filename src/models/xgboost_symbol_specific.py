@@ -213,6 +213,9 @@ def train_all_models(data_dir: str, output_dir: str, feature_info: Path = None):
 
 def train_grouped_model(csv_paths: list[Path], model_dir: Path, group_name: str, features: list | None = None):
     """Train a single model using data from multiple symbols."""
+    # Ensure output directory exists
+    model_dir.mkdir(parents=True, exist_ok=True)
+    
     df_list = [pd.read_csv(p, low_memory=False) for p in csv_paths]
     df = pd.concat(df_list, ignore_index=True)
     tmp_file = model_dir / f"{group_name}_combined.csv"
