@@ -23,6 +23,7 @@ import pytz
 import time
 
 from src.feature_engineering.magic8_features import Magic8FeatureEngineer, SymbolNormalizer
+from src.feature_engineering.delta_features import DeltaFeatureGenerator
 from validate_profit_coverage import validate_profit_data
 
 class Phase1DataPreparation:
@@ -583,6 +584,10 @@ class Phase1DataPreparation:
         # Magic8 specific prediction alignment features
         fe = Magic8FeatureEngineer()
         self.df = fe.engineer(self.df)
+
+        # Delta-aware features
+        delta_fe = DeltaFeatureGenerator()
+        self.df = delta_fe.generate_delta_features(self.df)
 
         # Normalize profit columns per symbol if statistics available
         profit_col_candidates = ['prof_profit', 'raw', 'managed', 'profit_final']

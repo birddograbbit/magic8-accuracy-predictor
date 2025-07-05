@@ -11,12 +11,15 @@
 - [x] Add strike-by-strike breakdown features
 - [x] Include Magic8 prediction indicators
 - [x] Process 1,076,742 trades with complete schema
+- [x] Track delta sheet merges in source_file (v3 processor)
+- [x] Delta integration validation script
 
 ### Feature Engineering  
 - [x] Implement Magic8-specific features (74 total)
 - [x] Add symbol normalization for profit scales
 - [x] Create microstructure features from bid-ask
 - [x] Add delta and prediction alignment features
+- [x] DeltaFeatureGenerator for short/long-term features
 
 ### Model Development
 - [x] Train 8 individual symbol models
