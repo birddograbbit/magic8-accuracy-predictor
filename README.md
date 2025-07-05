@@ -3,7 +3,7 @@
 ## Project Overview
 This project predicts the accuracy (win/loss) of Magic8's 0DTE options trading systems using machine learning.
 
-**Revamp Status**: Multi-model architecture in progress with symbol specific features.
+**Revamp Status**: Multi-model architecture in progress with symbol-specific features. New approach trains individual XGBoost models for each trading symbol (SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA) to capture unique market dynamics.
 
 **Trading Symbols**: SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA  
 **Strategies**: Butterfly, Iron Condor, Vertical, Sonar  
@@ -58,6 +58,19 @@ python ibkr_downloader.py --symbols "STOCK:SPY" --bar_sizes "5 mins" --duration 
 ```
 
 ### Step 4: Run ML Pipeline
+
+#### Option A: Symbol-Specific Models (New Approach)
+```bash
+# Split data by symbol into separate files
+mkdir -p data/symbol_data
+python split_data_by_symbol.py data/processed_optimized_v2/magic8_trades_complete.csv data/symbol_data
+
+# Train individual models for each symbol
+mkdir -p models/symbol_specific
+python train_symbol_models.py data/symbol_data models/symbol_specific data/phase1_processed/feature_info.json
+```
+
+#### Option B: Single Model (Original Approach)
 ```bash
 # Feature engineering (2-5 minutes)
 python src/phase1_data_preparation.py
