@@ -83,6 +83,16 @@ python train_symbol_models.py data/symbol_specific models/individual data/symbol
 # - ... (model and features for each symbol)
 ```
 
+### Step 4a: Analyze Profit Scales by Strategy
+```bash
+python analyze_profit_scales.py \
+    data/processed_optimized_v2/magic8_trades_complete.csv \
+    data/profit_scale
+```
+Outputs `profit_scale_stats.json` and `profit_scale_groups.json` in `data/profit_scale/`.
+
+
+
 ### Step 5: Train Grouped Models
 ```bash
 # Train grouped models for symbols with similar profit scales
@@ -92,6 +102,11 @@ python train_grouped_models.py data/symbol_specific models/grouped
 # - models/grouped/SPX_SPY_combined_model.pkl (89.95% accuracy)
 # - models/grouped/QQQ_AAPL_TSLA_combined_model.pkl (90.13% accuracy)
 ```
+### Step 5a: Train Symbol-Strategy Models
+```bash
+python train_symbol_strategy_models.py data/processed_optimized_v2/magic8_trades_complete.csv models/symbol_strategy
+```
+
 
 ### Step 6: Optimize Thresholds
 ```bash

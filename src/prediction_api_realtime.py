@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from data_manager import DataManager
 from feature_engineering.real_time_features import RealTimeFeatureGenerator
-from models.multi_model import SymbolModelStrategy, MultiModelPredictor
+from models.hierarchical_predictor import HierarchicalPredictor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class PredictionResponse(BaseModel):
     n_features: int
 
 model = None
-predictor: MultiModelPredictor | None = None
+predictor: HierarchicalPredictor | None = None
 thresholds_individual: dict = {}
 thresholds_grouped: dict = {}
 feature_gen: RealTimeFeatureGenerator
@@ -65,12 +65,26 @@ async def lifespan(app: FastAPI):
 
     # Multi-model configuration
     model_map = cfg.get('models')
-    routing = cfg.get('model_routing', {})
+    symbol_strategy_dir = cfg.get('symbol_strategy_models', {}).get('dir')
+
     if model_map:
-        strategy = SymbolModelStrategy(model_map)
-        predictor = MultiModelPredictor(strategy, model_routing=routing)
-        predictor.load_models()
-        logger.info("Loaded %d symbol specific models", len(predictor.models))
+        # Load symbol-strategy models if present
+        symbol_strategy_paths = {}
+        if symbol_strategy_dir:
+            for p in Path(symbol_strategy_dir).glob('*_model.pkl'):
+                key = p.stem.replace('_model', '')
+                symbol_strategy_paths[key] = str(p)
+
+        predictor = HierarchicalPredictor(
+            symbol_strategy_paths=symbol_strategy_paths,
+            symbol_paths={k: v for k, v in model_map.items() if k != 'default'},
+            default_path=model_map.get('default'),
+        )
+        logger.info(
+            "Loaded %d symbol-strategy models, %d symbol models",
+            len(predictor.symbol_strategy_models),
+            len(predictor.symbol_models),
+        )
 
         # Load thresholds for individual models
         threshold_path = Path("models/individual/thresholds.json")
@@ -116,10 +130,10 @@ async def predict(req: TradeRequest):
     features, names = await feature_gen.generate_features(req.symbol, order)
     X = np.array([features])
     if predictor:
-        proba = predictor.predict_proba(req.symbol, X)[0][1]
+        proba = predictor.predict_proba(req.symbol, req.strategy, X)[0][1]
 
         threshold = 0.5
-        if req.symbol in predictor.models:
+        if req.symbol in predictor.symbol_models or f"{req.symbol}_{req.strategy}" in predictor.symbol_strategy_models:
             sym_thresh = thresholds_individual.get(req.symbol, {})
             threshold = sym_thresh.get(req.strategy, 0.5)
         else:
