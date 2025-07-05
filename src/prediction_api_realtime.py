@@ -7,17 +7,18 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 import joblib
 import numpy as np
 import yaml
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from data_manager import DataManager
 from feature_engineering.real_time_features import RealTimeFeatureGenerator
 from models.hierarchical_predictor import HierarchicalPredictor
+from risk_reward_calculator import RiskRewardCalculator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,8 +32,22 @@ class TradeRequest(BaseModel):
     symbol: str
     premium: float
     predicted_price: float
+    strikes: Optional[List[float]] = Field(default_factory=list)
+    action: Optional[str] = None
+    option_type: Optional[str] = None
+    quantity: int = 1
     risk: Optional[float] = None
     reward: Optional[float] = None
+
+
+class TradeInstruction(BaseModel):
+    symbol: str
+    strategy: str
+    strikes: List[float]
+    premium: float
+    action: str
+    quantity: int = 1
+    option_type: Optional[str] = None
 
 class PredictionResponse(BaseModel):
     timestamp: str
@@ -121,6 +136,40 @@ async def market(symbol: str):
         "timestamp": datetime.now().isoformat(),
     }
 
+
+@app.post("/calculate_risk_reward")
+async def calculate_risk_reward(request: TradeInstruction):
+    """Return risk/reward metrics for a trade instruction."""
+    calc = RiskRewardCalculator()
+
+    if request.strategy == "Butterfly":
+        result = calc.calculate_butterfly(
+            request.strikes, request.premium, request.action, request.quantity
+        )
+    elif request.strategy in ["Iron Condor", "Sonar"]:
+        result = calc.calculate_iron_condor(
+            request.strikes, request.premium, request.action, request.quantity
+        )
+    elif request.strategy == "Vertical":
+        result = calc.calculate_vertical(
+            request.strikes,
+            request.premium,
+            request.action,
+            request.option_type or "CALL",
+            request.quantity,
+        )
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown strategy: {request.strategy}")
+
+    return {
+        "symbol": request.symbol,
+        "strategy": request.strategy,
+        "risk": result["max_loss"],
+        "reward": result["max_profit"],
+        "risk_reward_ratio": result["risk_reward_ratio"],
+        "breakevens": {k: v for k, v in result.items() if "breakeven" in k},
+    }
+
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(req: TradeRequest):
     if model is None and predictor is None:
@@ -145,6 +194,22 @@ async def predict(req: TradeRequest):
         proba = model.predict_proba(X)[0][1]
         threshold = 0.5
     data = await manager.get_market_data(req.symbol)
+
+    if (req.risk is None or req.reward is None) and req.strikes:
+        calc = RiskRewardCalculator()
+        if req.strategy == "Butterfly":
+            rr = calc.calculate_butterfly(req.strikes, req.premium, req.action or "BUY", req.quantity)
+        elif req.strategy in ["Iron Condor", "Sonar"]:
+            rr = calc.calculate_iron_condor(req.strikes, req.premium, req.action or "SELL", req.quantity)
+        elif req.strategy == "Vertical":
+            rr = calc.calculate_vertical(
+                req.strikes, req.premium, req.action or "SELL", req.option_type or "CALL", req.quantity
+            )
+        else:
+            rr = None
+        if rr:
+            req.risk = rr["max_loss"]
+            req.reward = rr["max_profit"]
 
     return PredictionResponse(
         timestamp=datetime.now().isoformat(),
