@@ -121,15 +121,16 @@ def main(data_dir: str, model_dir: str, debug: bool = False):
                     group, model, available_features, 
                     debug=(debug and strategy == df['strategy'].iloc[0])  # Debug first strategy only
                 )
-                thresholds[sym][strategy] = threshold
-                all_thresholds.append(threshold)
-                all_f1_scores.append(f1)
+                # Cast to regular Python floats for JSON serialization
+                thresholds[sym][strategy] = float(threshold)
+                all_thresholds.append(float(threshold))
+                all_f1_scores.append(float(f1))
                 
                 # Method 2: Optimize for 80% recall
                 threshold_recall, _ = optimize_threshold_precision_recall(
                     group, model, available_features, target_recall=0.8
                 )
-                thresholds_by_recall[sym][strategy] = threshold_recall
+                thresholds_by_recall[sym][strategy] = float(threshold_recall)
                 
                 print(f"  {strategy}: F1-optimal={threshold:.2f} (F1={f1:.3f}), " 
                       f"80%-recall={threshold_recall:.2f}")
