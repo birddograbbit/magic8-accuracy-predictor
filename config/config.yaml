@@ -59,6 +59,9 @@ model_routing:
     AAPL: QQQ_AAPL_TSLA
     TSLA: QQQ_AAPL_TSLA
 
+symbol_strategy_models:
+  dir: models/symbol_strategy
+
 prediction:
     
   feature_config:

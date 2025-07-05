@@ -24,6 +24,9 @@
 - [x] Implement multi-model architecture
 - [x] Add model routing with fallback support
 - [x] Optimize thresholds per symbol-strategy
+- [x] Profit scale analyzer for symbol-strategy
+- [x] Symbol-strategy model trainer
+- [x] Hierarchical predictor with fallback
 
 ### API Integration
 - [x] Update prediction API for multi-model support
