@@ -3,11 +3,11 @@
 ## Project Overview
 This project predicts the accuracy (win/loss) of Magic8's 0DTE options trading systems using machine learning.
 
-**Revamp Status**: Multi-model architecture with symbol-specific models COMPLETE! Individual XGBoost models trained for each trading symbol (SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA) plus grouped models for similar profit scales. Hierarchical prediction with delta integration and risk/reward calculations implemented.
+**Revamp Status**: Multi-model architecture with symbol-specific models COMPLETE! Individual XGBoost models trained for each trading symbol (SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA) plus grouped models for similar profit scales. Hierarchical prediction and risk/reward calculations implemented.
 
 **Trading Symbols**: SPX, SPY, RUT, QQQ, XSP, NDX, AAPL, TSLA  
 **Strategies**: Butterfly, Iron Condor, Vertical, Sonar  
-**Status**: ✅ Phase 1-7 Complete | ✅ Individual Models (90-94%) | ✅ Grouped Models (90%) | ✅ Symbol-Strategy Models | ✅ Delta Integration | ✅ Risk/Reward Calculator
+**Status**: ✅ Phase 1-7 Complete | ✅ Individual Models (90-94%) | ✅ Grouped Models (90%) | ✅ Symbol-Strategy Models | ✅ Risk/Reward Calculator
 
 ## 🎉 All Models Successfully Trained (January 2025 Update)
 
@@ -33,7 +33,7 @@ This project predicts the accuracy (win/loss) of Magic8's 0DTE options trading s
 - **SPX_SPY**: 89.95% accuracy (345,014 samples)
 - **QQQ_AAPL_TSLA**: 90.13% accuracy (244,435 samples)
 
-## 🚀 Complete Operational Flow (Enhanced with Phases 5-7)
+## 🚀 Complete Operational Flow
 
 ### Step 1: Setup Environment
 ```bash
@@ -48,26 +48,20 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Step 2: Process Raw Magic8 Data with Delta Integration
+### Step 2: Process Raw Magic8 Data
 ```bash
-# Run the v3 data processor that includes delta sheet tracking
-./run_data_processing_v3.sh
+# Run the complete data processor that merges all sheets
+./run_data_processing_v2.sh
 
-# Or manually:
-python process_magic8_data_optimized_v3.py \
-    --input data/raw \
-    --output data/processed_optimized_v3 \
-    --track-delta-merges
-
-# This creates: data/processed_optimized_v3/magic8_trades_complete.csv
-# Features include: short_term, long_term, source_file tracking
+# This creates: data/processed_optimized_v2/magic8_trades_complete.csv
 # Processing time: ~3.5 minutes for 1M+ trades
+# Note: Delta features (short_term/long_term) are included if delta sheets are present
 ```
 
 ### Step 3: Split Data by Symbol
 ```bash
 # Create symbol-specific CSV files
-python split_data_by_symbol.py data/processed_optimized_v3/magic8_trades_complete.csv data/symbol_specific
+python split_data_by_symbol.py data/processed_optimized_v2/magic8_trades_complete.csv data/symbol_specific
 
 # This creates:
 # - data/symbol_specific/SPX_trades.csv
@@ -92,12 +86,16 @@ python train_symbol_models.py data/symbol_specific models/individual data/symbol
 
 ### Step 4a: Analyze Profit Scales by Strategy
 ```bash
+# Analyze profit ranges for correct symbol grouping
 python analyze_profit_scales.py \
-    data/processed_optimized_v3/magic8_trades_complete.csv \
+    data/processed_optimized_v2/magic8_trades_complete.csv \
     data/profit_scale
+
+# Outputs:
+# - data/profit_scale/profit_scale_stats.json
+# - data/profit_scale/profit_scale_groups.json
+# Correctly classifies SPX as large-scale based on actual profit ranges
 ```
-Outputs `profit_scale_stats.json` and `profit_scale_groups.json` in `data/profit_scale/`.
-Correctly classifies SPX as large-scale based on actual profit ranges.
 
 ### Step 5: Train Grouped Models
 ```bash
@@ -112,7 +110,7 @@ python train_grouped_models.py data/symbol_specific models/grouped
 ### Step 5a: Train Symbol-Strategy Models
 ```bash
 # Train hierarchical models for each symbol-strategy combination
-python train_symbol_strategy_models.py data/processed_optimized_v3/magic8_trades_complete.csv models/symbol_strategy
+python train_symbol_strategy_models.py data/processed_optimized_v2/magic8_trades_complete.csv models/symbol_strategy
 
 # Creates models like:
 # - models/symbol_strategy/SPX_Butterfly_model.pkl
@@ -187,17 +185,6 @@ python src/prediction_api_realtime.py
 # - POST /calculate_risk_reward - Calculate max profit/loss for trades
 ```
 
-### Step 9: Validate Delta Integration (Optional)
-```bash
-# Check delta data coverage in processed files
-python validate_delta_integration.py data/processed_optimized_v3/magic8_trades_complete.csv
-
-# Output shows:
-# - Overall delta coverage percentage
-# - Monthly coverage breakdown
-# - Missing delta periods
-```
-
 ## 📊 Key Results
 
 ### Symbol-Specific Profit Scales (Corrected)
@@ -211,14 +198,14 @@ python validate_delta_integration.py data/processed_optimized_v3/magic8_trades_c
 - **Mean threshold**: 0.600 (std: 0.097)
 - **F1 scores**: 0.739-0.986 (mean: 0.910)
 
-### Model Features (Enhanced: 74+ features)
-Including temporal features, price data, VIX indicators, delta predictions (short_term/long_term), risk/reward ratios, strike information, and strategy encodings.
+### Model Features (31+ auto-detected)
+Including temporal features, price data, VIX indicators, risk/reward ratios, strike information, and strategy encodings.
+**Note**: Delta features (short_term/long_term) are captured in data processing but require API integration.
 
 ### Data Statistics
 - **Total trades**: 1,076,742 (with complete data)
 - **Date Range**: Jan 2023 - Jun 2025 (2.5 years)
 - **Strategies**: Butterfly (27.5%), Iron Condor (27.5%), Vertical (27.5%), Sonar (18.4%)
-- **Delta Coverage**: 95%+ with short/long term predictions
 
 ## 📈 Enhanced Multi-Model Architecture
 
@@ -228,7 +215,6 @@ The architecture handles symbol-specific characteristics with hierarchical predi
 - **Grouped Models**: Third priority for similar profit scales
 - **Default Model**: Fallback for new symbols/strategies
 - **Hierarchical Predictor**: Automatic model selection with 4-level fallback
-- **Delta Integration**: Short/long term predictions from Magic8
 - **Risk/Reward Calculator**: Real-time max profit/loss calculations
 
 ## 📁 Project Structure
@@ -252,7 +238,7 @@ magic8-accuracy-predictor/
 │   ├── profit_scale_analyzer.py        # Profit scale analysis
 │   └── prediction_api_realtime.py      # Main API with all features
 ├── data/
-│   ├── processed_optimized_v3/         # Complete merged data with delta
+│   ├── processed_optimized_v2/         # Complete merged data
 │   ├── symbol_specific/                # Per-symbol CSV files
 │   └── profit_scale/                   # Profit analysis results
 ├── models/
@@ -268,7 +254,7 @@ magic8-accuracy-predictor/
 │       └── *_*_model.pkl              # e.g., SPX_Butterfly_model.pkl
 ├── config/
 │   └── config.yaml                     # API configuration
-├── process_magic8_data_optimized_v3.py # Data processor with delta
+├── process_magic8_data_optimized_v2.py # Data processor
 ├── split_data_by_symbol.py             # Symbol splitter
 ├── train_symbol_models.py              # Individual trainer
 ├── train_grouped_models.py             # Grouped trainer
@@ -276,7 +262,6 @@ magic8-accuracy-predictor/
 ├── analyze_profit_scales.py            # Profit scale analyzer
 ├── optimize_thresholds.py              # Threshold optimizer
 ├── optimize_thresholds_grouped.py      # Grouped threshold optimizer
-├── validate_delta_integration.py       # Delta validation script
 └── run_realtime_api.sh                 # API launcher script
 ```
 
@@ -284,23 +269,15 @@ magic8-accuracy-predictor/
 
 ### Complete Data Processing Pipeline
 1. **Sheet Merger**: Combines profit, trades, and delta sheets by date/time/symbol
-2. **Delta Tracking**: Marks source_file when delta data is merged
-3. **Feature Extraction**: All strike details, bid/ask spreads, delta values
-4. **Duplicate Detection**: Prevents duplicate trades in output
-5. **Format Year Fix**: Correct year assignment from folder dates
+2. **Feature Extraction**: All strike details, bid/ask spreads, delta values
+3. **Duplicate Detection**: Prevents duplicate trades in output
+4. **Format Year Fix**: Correct year assignment from folder dates
 
 ### Hierarchical Model Architecture
 1. **Symbol-Strategy Models**: Most specific (e.g., SPX_Butterfly)
 2. **Symbol Models**: Per-symbol fallback (e.g., SPX)
 3. **Strategy Models**: Per-strategy fallback (e.g., Butterfly)
 4. **Default Model**: Universal fallback
-
-### Delta Features
-- **has_delta_data**: Indicator for delta presence
-- **short_long_spread**: Difference between predictions
-- **price_vs_short/long**: Price comparisons
-- **delta_convergence**: Agreement between predictions
-- **predictions_aligned**: Directional agreement
 
 ### Risk/Reward Calculations
 - **Butterfly**: Max profit at center strike, limited risk
@@ -412,7 +389,6 @@ data_source:
 
 ### Recent Improvements (January 2025)
 - **Hierarchical Predictor**: 4-level model fallback system
-- **Delta Integration**: Short/long term predictions utilized
 - **Risk/Reward Calculator**: Real-time option spread analysis
 - **Profit Scale Correction**: SPX properly classified as large-scale
 - **Symbol-Strategy Models**: Most granular predictions possible
@@ -431,10 +407,9 @@ data_source:
 - Verify all threshold JSON files are generated
 - Ensure PYTHONPATH is set correctly
 
-### Missing Delta Features
-- Ensure using v3 data processor
-- Check source_file column contains "delta" markers
-- Validate delta coverage with validation script
+### Missing Delta Features in API
+- Delta features are captured in data processing but not yet integrated in real-time API
+- See To-Do section in `magic8-predictor-revamp-plan2.md` for implementation details
 
 ### Empty data/symbol_specific Directory
 Run the complete pipeline: process data → split by symbol → train models → optimize thresholds
@@ -456,8 +431,8 @@ Run the complete pipeline: process data → split by symbol → train models →
 - [x] Thresholds optimized and saved
 - [x] API tested with all endpoints
 - [x] Configuration updated
-- [x] Delta integration validated
 - [x] Risk/reward calculator tested
+- [ ] Delta features integrated in API
 - [ ] IBKR Gateway configured for production
 - [ ] Monitoring setup
 - [ ] Backup procedures documented
@@ -478,4 +453,4 @@ Run the complete pipeline: process data → split by symbol → train models →
 **Model Status**: ✅ All models trained and integrated (3-tier hierarchy)  
 **API Status**: ✅ Real-time API with hierarchical prediction and risk/reward  
 **Revamp Progress**: 98% Complete - Phases 0-7 Done  
-**Next Goal**: Deploy to production and monitor performance
+**Next Goal**: Integrate delta features in API, then deploy to production
