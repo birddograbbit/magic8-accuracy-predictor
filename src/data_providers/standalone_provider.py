@@ -40,6 +40,11 @@ class StandaloneDataProvider(BaseDataProvider):
         
         # Track failed symbols to avoid repeated subscription errors
         self._failed_symbols: Set[str] = set()
+
+        # Caches for daily data
+        self._previous_close_cache: Dict[str, float] = {}
+        self._daily_highs_lows: Dict[str, Dict[str, float]] = {}
+        self._cache_timestamp: Optional[datetime] = None
         
         logger.info(
             f"StandaloneDataProvider initialized: "
@@ -214,30 +219,67 @@ class StandaloneDataProvider(BaseDataProvider):
         except Exception as e:
             # Re-raise the exception to be handled by DataManager
             raise e
+
+    async def _update_daily_data(self, symbol: str):
+        """Fetch daily bar data to update previous close and high/low."""
+        try:
+            bars = await self.get_price_data(symbol, bars=2, interval="1 day")
+            if len(bars) >= 2:
+                prev_bar = bars[-2]
+                self._previous_close_cache[symbol] = prev_bar['close']
+                today_bar = bars[-1]
+                self._daily_highs_lows[symbol] = {
+                    'high': today_bar['high'],
+                    'low': today_bar['low']
+                }
+            elif len(bars) == 1:
+                today_bar = bars[0]
+                self._daily_highs_lows[symbol] = {
+                    'high': today_bar['high'],
+                    'low': today_bar['low']
+                }
+        except Exception as e:
+            logger.warning(f"Could not update daily data for {symbol}: {e}")
     
     async def get_vix_data(self) -> Dict:
-        """Get VIX data from IBKR."""
+        """Get VIX data from IBKR with proper change calculation."""
         try:
+            if self._cache_timestamp is None or (
+                datetime.now() - self._cache_timestamp
+            ).total_seconds() > 3600:
+                await self._update_daily_data('VIX')
+                self._cache_timestamp = datetime.now()
+
             vix_quote = await self.get_current_price('VIX')
-            
-            # Calculate change (simplified - would need previous close)
+            current_price = vix_quote['last']
+
+            prev_close = self._previous_close_cache.get('VIX', current_price)
+            change = current_price - prev_close
+            change_pct = (change / prev_close * 100) if prev_close != 0 else 0
+
+            daily_data = self._daily_highs_lows.get('VIX', {})
+            daily_high = max(daily_data.get('high', current_price), current_price)
+            daily_low = min(daily_data.get('low', current_price), current_price)
+
             return {
-                'last': vix_quote['last'],
-                'change': 0,  # TODO: Calculate from previous close
-                'change_pct': 0,
-                'high': vix_quote['last'],  # TODO: Get daily high/low
-                'low': vix_quote['last'],
-                'time': vix_quote['time']
+                'last': current_price,
+                'change': change,
+                'change_pct': change_pct,
+                'high': daily_high,
+                'low': daily_low,
+                'time': vix_quote['time'],
+                'prev_close': prev_close
             }
         except Exception as e:
             logger.error(f"Error getting VIX data: {e}")
             return {
-                'last': 15.0,  # Default VIX
+                'last': 15.0,
                 'change': 0,
                 'change_pct': 0,
                 'high': 15.0,
                 'low': 15.0,
-                'time': datetime.now().isoformat()
+                'time': datetime.now().isoformat(),
+                'prev_close': 15.0
             }
     
     async def get_option_chain(
