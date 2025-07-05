@@ -16,10 +16,11 @@ class SymbolModelStrategy:
 class MultiModelPredictor:
     """Load and route predictions to symbol specific models."""
 
-    def __init__(self, strategy: SymbolModelStrategy):
+    def __init__(self, strategy: SymbolModelStrategy, model_routing: Dict | None = None):
         self.strategy = strategy
         self.models: Dict[str, object] = {}
-
+        self.model_routing = model_routing or {}
+        
     def load_models(self):
         for sym, path in self.strategy.mapping.items():
             if sym == 'default':
@@ -32,9 +33,21 @@ class MultiModelPredictor:
             self.default_model = None
 
     def predict_proba(self, symbol: str, features):
+        """Route to appropriate model with grouped and default fallback."""
+        # direct individual model
         model = self.models.get(symbol)
-        if model is None:
-            if self.default_model is None:
-                raise ValueError(f"No model for symbol {symbol}")
-            model = self.default_model
-        return model.predict_proba(features)
+        if model:
+            return model.predict_proba(features)
+
+        # grouped routing
+        group_map = self.model_routing.get('use_grouped', {})
+        if symbol in group_map:
+            group_name = group_map[symbol]
+            group_model = self.models.get(group_name)
+            if group_model:
+                return group_model.predict_proba(features)
+
+        # default fallback
+        if self.default_model is None:
+            raise ValueError(f"No model available for symbol {symbol}")
+        return self.default_model.predict_proba(features)

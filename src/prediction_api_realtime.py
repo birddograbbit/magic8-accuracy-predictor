@@ -2,9 +2,11 @@
 """FastAPI service using real-time feature generator and DataManager."""
 
 import os
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import joblib
@@ -43,6 +45,8 @@ class PredictionResponse(BaseModel):
 
 model = None
 predictor: MultiModelPredictor | None = None
+thresholds_individual: dict = {}
+thresholds_grouped: dict = {}
 feature_gen: RealTimeFeatureGenerator
 manager: DataManager
 
@@ -61,11 +65,26 @@ async def lifespan(app: FastAPI):
 
     # Multi-model configuration
     model_map = cfg.get('models')
+    routing = cfg.get('model_routing', {})
     if model_map:
         strategy = SymbolModelStrategy(model_map)
-        predictor = MultiModelPredictor(strategy)
+        predictor = MultiModelPredictor(strategy, model_routing=routing)
         predictor.load_models()
         logger.info("Loaded %d symbol specific models", len(predictor.models))
+
+        # Load thresholds for individual models
+        threshold_path = Path("models/individual/thresholds.json")
+        if threshold_path.exists():
+            with open(threshold_path) as f:
+                thresholds_individual.update(json.load(f))
+            logger.info("Loaded individual thresholds for %d symbols", len(thresholds_individual))
+
+        # Load thresholds for grouped models
+        grouped_threshold_path = Path("models/grouped/thresholds_grouped.json")
+        if grouped_threshold_path.exists():
+            with open(grouped_threshold_path) as f:
+                thresholds_grouped.update(json.load(f))
+            logger.info("Loaded grouped thresholds for %d groups", len(thresholds_grouped))
     else:
         model = joblib.load(MODEL_PATH)
         logger.info("Model loaded, feature generator ready")
@@ -98,8 +117,19 @@ async def predict(req: TradeRequest):
     X = np.array([features])
     if predictor:
         proba = predictor.predict_proba(req.symbol, X)[0][1]
+
+        threshold = 0.5
+        if req.symbol in predictor.models:
+            sym_thresh = thresholds_individual.get(req.symbol, {})
+            threshold = sym_thresh.get(req.strategy, 0.5)
+        else:
+            for group_name, group_thresholds in thresholds_grouped.items():
+                if req.symbol in group_name.split('_'):
+                    threshold = group_thresholds.get(req.symbol, {}).get(req.strategy, 0.5)
+                    break
     else:
         proba = model.predict_proba(X)[0][1]
+        threshold = 0.5
     data = await manager.get_market_data(req.symbol)
 
     return PredictionResponse(
@@ -107,7 +137,7 @@ async def predict(req: TradeRequest):
         symbol=req.symbol,
         strategy=req.strategy,
         win_probability=float(proba),
-        prediction="WIN" if proba >= 0.5 else "LOSS",
+        prediction="WIN" if proba >= threshold else "LOSS",
         data_source=data["source"],
         n_features=len(features),
     )
