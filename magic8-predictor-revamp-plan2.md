@@ -197,6 +197,90 @@
 
 ## 📋 TO-DO: Remaining Implementation Tasks
 
+### 0. API Delta Feature Integration (1 day) - CRITICAL
+**Task**: Integrate delta features into real-time feature generator
+
+**Issue Discovered**: The `real_time_features.py` doesn't include delta features (short_term, long_term) that were implemented in Phase 6. This means the API isn't using these critical Magic8 prediction signals.
+
+#### Implementation Steps:
+```python
+# 1. Update RealTimeFeatureGenerator in real_time_features.py
+# Add to _generate_trade_features() method:
+
+# Delta prediction features from Magic8
+if 'short_term' in order_details:
+    features['short_term'] = order_details['short_term']
+    features['has_delta_data'] = 1.0
+else:
+    features['short_term'] = 0.0
+    features['has_delta_data'] = 0.0
+    
+if 'long_term' in order_details:
+    features['long_term'] = order_details['long_term']
+    
+# Delta-derived features
+if 'short_term' in order_details and 'long_term' in order_details:
+    features['short_long_spread'] = order_details['short_term'] - order_details['long_term']
+    features['short_long_ratio'] = order_details['short_term'] / max(order_details['long_term'], 1)
+    
+    # Price vs predictions
+    if 'price' in order_details:
+        features['price_vs_short'] = (order_details['price'] - order_details['short_term']) / order_details['price'] * 100
+        features['price_vs_long'] = (order_details['price'] - order_details['long_term']) / order_details['price'] * 100
+    
+    # Prediction alignment
+    if 'predicted_price' in order_details:
+        features['predicted_vs_short'] = order_details['predicted_price'] - order_details['short_term']
+        features['predicted_vs_long'] = order_details['predicted_price'] - order_details['long_term']
+    
+    # Delta convergence
+    features['delta_convergence'] = abs(order_details['short_term'] - order_details['long_term'])
+    
+    # Directional agreement
+    if 'price' in order_details:
+        features['predictions_aligned'] = float(
+            (order_details['short_term'] > order_details['price']) == 
+            (order_details['long_term'] > order_details['price'])
+        )
+
+# 2. Update feature order in _default_feature_order()
+# Add these features to the list:
+'short_term', 'long_term', 'has_delta_data',
+'short_long_spread', 'short_long_ratio',
+'price_vs_short', 'price_vs_long',
+'predicted_vs_short', 'predicted_vs_long',
+'delta_convergence', 'predictions_aligned'
+```
+
+#### Discord Integration Requirements:
+```python
+# 3. Update enhanced_discord_parser.py to pass delta data
+# Ensure parsed messages include:
+result['predictions']['short_term'] = ...
+result['predictions']['long_term'] = ...
+
+# 4. Update TradeRequest model in prediction_api_realtime.py
+class TradeRequest(BaseModel):
+    # ... existing fields ...
+    short_term: Optional[float] = None
+    long_term: Optional[float] = None
+```
+
+#### Testing:
+```bash
+# Test with delta features
+curl -X POST http://localhost:8000/predict \
+     -H "Content-Type: application/json" \
+     -d '{
+       "strategy": "Butterfly",
+       "symbol": "SPX",
+       "premium": 24.82,
+       "predicted_price": 5855,
+       "short_term": 5860,
+       "long_term": 5865
+     }'
+```
+
 ### 1. Production Deployment (1-2 days)
 **Task**: Deploy the complete system to production environment
 
@@ -437,7 +521,7 @@ find $BACKUP_DIR -type f -exec md5sum {} \; > $BACKUP_DIR/checksums.md5
 
 ---
 
-**Status**: Phases 0-7 Complete ✅ | Production Deployment Pending 📋
-**Next Step**: Begin production deployment with infrastructure setup
-**Priority**: Complete end-to-end testing with live Discord messages
-**Timeline**: 10-15 days to full production readiness
+**Status**: Phases 0-7 Complete ✅ | API Delta Integration & Production Deployment Pending 📋
+**Next Step**: Integrate delta features into real-time API, then begin production deployment
+**Priority**: Fix delta feature gap in API (critical for model accuracy)
+**Timeline**: 11-16 days to full production readiness (includes 1 day for delta integration)
