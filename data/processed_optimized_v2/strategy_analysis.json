@@ -1,0 +1,15 @@
+{
+  "total_trades": 1076742,
+  "by_strategy": {
+    "Butterfly": 295944,
+    "Iron Condor": 295944,
+    "Vertical": 295945,
+    "Sonar": 197666
+  },
+  "by_strategy_pct": {
+    "Butterfly": 27.49,
+    "Iron Condor": 27.49,
+    "Vertical": 27.49,
+    "Sonar": 18.36
+  }
+}

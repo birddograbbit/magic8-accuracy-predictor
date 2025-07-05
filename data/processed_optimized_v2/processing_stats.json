@@ -1,0 +1,9 @@
+{
+  "total_timestamps_processed": 1531500,
+  "timestamps_cleaned": 0,
+  "timestamps_failed": 0,
+  "success_rate": 100.0,
+  "total_processing_time_minutes": 3.49,
+  "folders_processed": 620,
+  "average_time_per_folder_seconds": 0.34
+}

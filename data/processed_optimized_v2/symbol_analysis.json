@@ -1,0 +1,32 @@
+{
+  "expected_symbols": [
+    "SPX",
+    "SPY",
+    "RUT",
+    "QQQ",
+    "XSP",
+    "NDX",
+    "AAPL",
+    "TSLA"
+  ],
+  "found_symbols": [
+    "SPX",
+    "SPY",
+    "XSP",
+    "AAPL",
+    "TSLA",
+    "QQQ",
+    "RUT",
+    "NDX"
+  ],
+  "by_symbol": {
+    "SPX": 173869,
+    "SPY": 173908,
+    "XSP": 173908,
+    "AAPL": 36454,
+    "TSLA": 36468,
+    "QQQ": 173817,
+    "RUT": 148485,
+    "NDX": 168590
+  }
+}

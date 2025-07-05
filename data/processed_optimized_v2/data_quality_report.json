@@ -1,0 +1,14 @@
+{
+  "summary": {
+    "total_trades": 1076742,
+    "negative_premiums": 8950,
+    "zero_premiums": 12867,
+    "unknown_strategies": 0,
+    "unknown_symbols": 0,
+    "folder_errors": 0,
+    "row_errors": 0,
+    "duplicates": 8757,
+    "bad_timestamps": 0
+  },
+  "details": {}
+}
