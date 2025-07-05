@@ -1,6 +1,6 @@
 # Magic8 Accuracy Predictor - Revamp Action Items
 
-**Last Updated**: January 2025  
+**Last Updated**: July 2025
 **Overall Status**: 98% Complete
 
 ## ✅ Completed Actions (January 2025)
@@ -34,6 +34,7 @@
 - [x] Add symbol-aware feature generation
 - [x] Configure model routing in config.yaml
 - [x] Fix VIX change calculations in data provider
+- [x] Add risk/reward calculator endpoint and parser (Phase 7)
 
 ### Documentation
 - [x] Update multi-model overview
