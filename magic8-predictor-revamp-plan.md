@@ -1,8 +1,8 @@
 # Magic8 Accuracy Predictor - Comprehensive Revamp Plan (v2)
 
-**Updated**: January 1, 2025  
+**Updated**: January 2, 2025  
 **Purpose**: Complete blueprint for improving Magic8 accuracy predictor with corrected data processing  
-**Overall Completion Status**: ~80%
+**Overall Completion Status**: ~85%
 
 ## 🚨 Critical Data Processing Issues Discovered
 
@@ -413,7 +413,7 @@ class SymbolNormalizer: ✓ IMPLEMENTED
 - ✓ Symbol normalization implemented and integrated into Phase 1 pipeline
 - ✓ Applied to profit columns per symbol using statistics
 
-## 🧠 Phase 2: Symbol-Specific Model Architecture [3-4 days] - 65% COMPLETE
+## 🧠 Phase 2: Symbol-Specific Model Architecture [3-4 days] - 85% COMPLETE
 
 ### 2.1 Model Strategy Decision Tree ✓ ENHANCED
 
@@ -433,7 +433,7 @@ class SymbolModelStrategy: ✓ ENHANCED
 - ✓ Enhanced with default model support for unseen symbols
 - ✓ Configured in config.yaml with model paths
 
-### 2.2 Multi-Model Architecture ✓ FUNCTIONAL IMPLEMENTATION
+### 2.2 Multi-Model Architecture ✓ COMPLETE WITH GROUPED MODELS
 
 ```python
 class MultiModelPredictor: ✓ ENHANCED
@@ -465,15 +465,59 @@ class MultiModelPredictor: ✓ ENHANCED
         return model.predict_proba(features)
 ```
 
+**NEW: Grouped Model Support** ✓ IMPLEMENTED
+
+```python
+def train_grouped_model(csv_paths: list[Path], model_dir: Path, group_name: str, features: list | None = None):
+    """Train a single model using data from multiple symbols."""
+    df_list = [pd.read_csv(p, low_memory=False) for p in csv_paths]
+    df = pd.concat(df_list, ignore_index=True)
+    tmp_file = model_dir / f"{group_name}_combined.csv"
+    df.to_csv(tmp_file, index=False)
+    try:
+        train_symbol_model(tmp_file, model_dir, features)
+        print(f"✓ Grouped model trained for {group_name}")
+    finally:
+        if tmp_file.exists():
+            tmp_file.unlink()
+
+def train_grouped_models(groups: dict[str, list[str]], data_dir: str, output_dir: str, feature_info: Path | None = None):
+    """Train models for each group mapping name -> [symbols]."""
+    data_dir = Path(data_dir)
+    output_dir = Path(output_dir)
+
+    features = None
+    if feature_info and feature_info.exists():
+        try:
+            with open(feature_info, "r") as f:
+                info = json.load(f)
+            features = info.get("feature_names", [])
+        except Exception as e:
+            print(f"Warning: Could not load feature_info: {e}")
+
+    for group, symbols in groups.items():
+        csv_paths = [data_dir / f"{sym}_trades.csv" for sym in symbols]
+        csv_paths = [p for p in csv_paths if p.exists()]
+        if not csv_paths:
+            print(f"No data for group {group} ({symbols})")
+            continue
+        train_grouped_model(csv_paths, output_dir, group, features)
+```
+
+**Command-line Script** ✓ IMPLEMENTED: `train_grouped_models.py`
+- Default groups configured: SPX+SPY (medium scale), QQQ+AAPL+TSLA (small scale)
+
 **Current State**:
 - ✓ Model loading and routing implemented
 - ✓ Default model fallback support added
 - ✓ Configuration integrated with config.yaml
 - ✓ Demo models configured (NDX, XSP)
-- ✗ No grouped models created yet
-- ✗ No threshold optimization
+- ✓ Grouped model utilities implemented
+- ✓ Command-line script for easy grouped model training
+- ✗ Grouped models not yet trained for all symbol groups
+- ✗ Performance comparison pending
 
-### 2.3 Symbol-Specific XGBoost Model ✓ IMPLEMENTED
+### 2.3 Symbol-Specific XGBoost Model ✓ ENHANCED WITH GROUPED SUPPORT
 
 ```python
 def train_symbol_model(csv_path: Path, model_dir: Path, features: list, target: str = "target"): ✓
@@ -519,6 +563,7 @@ def train_symbol_model(csv_path: Path, model_dir: Path, features: list, target: 
 - ✓ Implementation complete with missing feature handling
 - ✓ Model persistence via pickle files
 - ✓ Demo models trained for NDX (large scale) and XSP (small scale)
+- ✓ Grouped model support added
 - ✗ Not all symbols have models trained yet
 
 ### 2.4 Configuration ✓ UPDATED
@@ -529,6 +574,9 @@ models:
   NDX: models/demo_models/NDX_trades_model.pkl
   XSP: models/demo_models/XSP_trades_model.pkl
   default: models/xgboost_phase1_model.pkl
+  # Grouped models (to be added after training)
+  SPX_SPY: models/grouped/SPX_SPY_combined_model.pkl
+  QQQ_AAPL_TSLA: models/grouped/QQQ_AAPL_TSLA_combined_model.pkl
 
 prediction:
   feature_config:
@@ -536,7 +584,7 @@ prediction:
       enabled: true
 ```
 
-## 🔧 Phase 3: Model Evaluation Fixes [1-2 days] - 50% COMPLETE
+## 🔧 Phase 3: Model Evaluation Fixes [1-2 days] - 75% COMPLETE
 
 ### 3.1 Fix Baseline with Complete Data ✓ ENHANCED
 
@@ -585,12 +633,45 @@ def evaluate_profit_by_symbol(self): ✓ NEW METHOD
     return results
 ```
 
+**NEW: Per-Symbol-Strategy Threshold Optimization** ✓ COMPLETE
+
+```python
+def optimize_threshold(df: pd.DataFrame, model, features: list):
+    """Return best threshold for dataframe using provided model."""
+    X = df[features]
+    y = df['target']
+    dtest = xgb.DMatrix(X)
+    proba = model.predict(dtest)
+    thresholds = np.arange(0.1, 0.9, 0.05)
+    best = 0
+    best_th = 0.5
+    for th in thresholds:
+        pred = (proba >= th).astype(int)
+        f1 = (2 * (pred & y).sum()) / (pred.sum() + y.sum() + 1e-9)
+        if f1 > best:
+            best = f1
+            best_th = th
+    return best_th
+
+# optimize_thresholds.py now calculates per-symbol AND per-strategy thresholds
+thresholds = defaultdict(dict)
+for csv_file in data_dir.glob('*_trades.csv'):
+    sym = csv_file.stem.split('_')[0]
+    # ... load model and features ...
+    for strategy, group in df.groupby('strategy'):
+        if group['target'].nunique() < 2:
+            continue
+        th = optimize_threshold(group, model, features)
+        thresholds[sym][strategy] = th
+        print(f"{sym}-{strategy}: {th:.2f}")
+```
+
 **Current State**:
 - ✓ `evaluate_profit_impact_corrected` method implemented
 - ✓ `evaluate_profit_by_symbol` method added for per-symbol analysis
-- ✗ Doesn't use symbol-specific baselines yet
-- ✗ No threshold optimization per symbol-strategy
-- ✗ No validation of handling 76x profit scales
+- ✓ Threshold optimization per symbol-strategy COMPLETE
+- ✓ Thresholds saved to `thresholds.json` for production use
+- ✗ Full validation of handling 76x profit scales pending
 
 ## 📊 Phase 4: Updated Implementation Timeline [2-3 weeks total]
 
@@ -614,22 +695,23 @@ def evaluate_profit_by_symbol(self): ✓ NEW METHOD
 - [x] Create XGBoost symbol-specific model implementation
 - [x] Train demo models (NDX, XSP)
 - [x] Implement model routing with fallback
+- [x] Add grouped model utilities
 
 **Days 9-10: Evaluation & Optimization**
 - [x] Fix baseline calculations with actual data
 - [x] Add per-symbol profit evaluation
-- [ ] Optimize thresholds per symbol-strategy
-- [ ] Test profit improvements
+- [x] Optimize thresholds per symbol-strategy
+- [ ] Test profit improvements with optimized thresholds
 - [ ] Create performance dashboard
 
 ### Week 3: Integration & Testing
 **Days 11-12: API Updates**
 - [x] Update prediction API for multi-model
-- [ ] Add symbol-aware feature generation
+- [ ] Add symbol-aware feature generation with threshold lookup
 - [x] Implement model selection logic with default
 
 **Days 13-14: Testing & Documentation**
-- [ ] End-to-end testing
+- [ ] End-to-end testing with grouped models
 - [ ] Performance benchmarking
 - [x] Documentation updates
 - [ ] Deployment preparation
@@ -646,14 +728,15 @@ def evaluate_profit_by_symbol(self): ✓ NEW METHOD
 - [ ] Reduce maximum drawdowns
 
 **Medium Scale (SPX, SPY)**:
-- [ ] Train grouped model
+- [x] Grouped model utilities ready
+- [ ] Train SPX+SPY grouped model
 - [ ] Increase profit per trade by 50%
 - [ ] Optimize for consistency
 - [ ] Target 65-75% trade selection
 
 **Small Scale (XSP, QQQ, AAPL, TSLA)**:
 - [x] Demo model trained for XSP
-- [ ] Train models for remaining symbols
+- [ ] Train QQQ+AAPL+TSLA grouped model
 - [ ] Focus on win rate improvement
 - [ ] May need different strategy mix
 - [ ] Consider discontinuing low-profit strategies
@@ -661,44 +744,43 @@ def evaluate_profit_by_symbol(self): ✓ NEW METHOD
 ### Overall Targets:
 1. **Data Completeness**: ✓ 100% capture of all sheet data
 2. **Feature Coverage**: ✓ Use all Magic8 prediction indicators (complete)
-3. **Model Accuracy**: ⏳ Appropriate to symbol scale (demo models trained)
-4. **Profit Improvement**: ✗ 50%+ over corrected baseline (pending validation)
+3. **Model Architecture**: ✓ Multi-model with grouped support (implemented)
+4. **Threshold Optimization**: ✓ Per-symbol-strategy thresholds (complete)
+5. **Profit Improvement**: ⏳ 50%+ over corrected baseline (pending validation)
 
 ## 🔑 Critical Next Steps
 
-1. **Complete Symbol-Specific Model Training**: 
-   - Train models for ALL symbols (currently only NDX and XSP demo models)
-   - Focus on RUT (large scale), SPX/SPY (medium scale), and remaining small scale symbols
-   - Use the `train_symbol_models.py` script with appropriate data directories
+1. **Train All Symbol-Specific and Grouped Models**: 
+   - Use `train_symbol_models.py` for individual models (RUT, SPX, SPY, QQQ, AAPL, TSLA)
+   - Use `train_grouped_models.py` to create SPX+SPY and QQQ+AAPL+TSLA grouped models
+   - Update config.yaml with the new model paths
 
-2. **Implement Grouped Models**:
-   - Create grouped model for medium scale symbols (SPX, SPY)
-   - Create grouped model for small scale symbols (QQQ, AAPL, TSLA)
-   - Test performance vs individual models
+2. **Apply Optimized Thresholds in Production**:
+   - Load thresholds.json in prediction API
+   - Modify prediction logic to use symbol-strategy specific thresholds instead of fixed 0.5
+   - Test threshold impact on profit metrics
 
-3. **Optimize Thresholds Per Symbol-Strategy**:
-   - Use `optimize_thresholds.py` to find optimal decision thresholds
-   - Apply per-symbol profit evaluation results
-   - Ensure each symbol-strategy combination has appropriate thresholds
-
-4. **Validate 76x Scale Handling**:
+3. **Validate 76x Scale Handling**:
    - Run comprehensive tests comparing NDX vs XSP model performance
    - Ensure profit calculations properly account for scale differences
-   - Verify model predictions are appropriate for each symbol's profit profile
+   - Create visual comparison of predictions across profit scales
+   - Document any scale-specific adjustments needed
+
+4. **Performance Comparison: Individual vs Grouped Models**:
+   - Compare SPX and SPY individual models vs SPX+SPY grouped model
+   - Compare QQQ, AAPL, TSLA individual vs grouped performance
+   - Determine optimal model configuration for each symbol
 
 5. **Complete Integration Testing**:
-   - Test end-to-end pipeline with all symbol models
-   - Verify API correctly routes to appropriate models and falls back to default
+   - Test end-to-end pipeline with all models and optimized thresholds
+   - Verify API correctly routes to appropriate models with proper thresholds
    - Validate real-time prediction performance across all symbols
-   - Measure actual profit improvements per symbol
+   - Measure actual profit improvements per symbol with new thresholds
 
-This comprehensive update addresses the fundamental data issues and provides a path to symbol-aware modeling that can handle the 76x profit scale differences across symbols.
+6. **Create Performance Dashboard**:
+   - Show per-symbol profit metrics (baseline vs model)
+   - Display threshold values per symbol-strategy
+   - Track model performance over time
+   - Include trade selectivity metrics
 
-**Current Status Summary**:
-- ✓ Data processing and infrastructure complete
-- ✓ Feature engineering complete with all Magic8 prediction features
-- ✓ Per-symbol profit evaluation implemented
-- ✓ Symbol-specific model architecture implemented with missing feature handling
-- ✓ Demo models trained (NDX, XSP) with default fallback
-- ✗ Full model training for all symbols pending
-- ✗ Performance validation pending
+This comprehensive update shows significant progress in implementing grouped models and per-symbol-strategy threshold optimization, bringing the overall completion to ~85%. The critical remaining work focuses on training all models, validating performance, and completing integration testing.
