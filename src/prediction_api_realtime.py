@@ -32,6 +32,8 @@ class TradeRequest(BaseModel):
     symbol: str
     premium: float
     predicted_price: float
+    short_term: Optional[float] = None
+    long_term: Optional[float] = None
     strikes: Optional[List[float]] = Field(default_factory=list)
     action: Optional[str] = None
     option_type: Optional[str] = None

@@ -200,7 +200,7 @@ python src/prediction_api_realtime.py
 
 ### Model Features (31+ auto-detected)
 Including temporal features, price data, VIX indicators, risk/reward ratios, strike information, and strategy encodings.
-**Note**: Delta features (short_term/long_term) are captured in data processing but require API integration.
+**Note**: Delta features (short_term/long_term) are now fully integrated into the real-time API.
 
 ### Data Statistics
 - **Total trades**: 1,076,742 (with complete data)
@@ -333,8 +333,10 @@ curl -X POST http://localhost:8000/predict \
      -d '{
        "strategy": "Butterfly", 
        "symbol": "SPX", 
-       "premium": 24.82, 
+       "premium": 24.82,
        "predicted_price": 5855,
+       "short_term": 5850,
+       "long_term": 5860,
        "strikes": [5905, 5855, 5805],
        "action": "BUY"
      }'
