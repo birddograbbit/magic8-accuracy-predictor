@@ -35,11 +35,12 @@ class DummyProvider:
     async def get_vix_data(self):
         return {"last": 15}
 
-async def generate():
+async def generate(order=None):
     path = Path("data/phase1_processed/feature_info.json")
     provider = DummyProvider()
     gen = RealTimeFeatureGenerator(provider, feature_info_path=str(path))
-    feats, names = await gen.generate_features("SPX", {"strategy": "Butterfly", "premium": 1, "predicted_price": 1})
+    order = order or {"strategy": "Butterfly", "premium": 1, "predicted_price": 1}
+    feats, names = await gen.generate_features("SPX", order)
     return feats, names
 
 
@@ -49,3 +50,29 @@ def test_generated_feature_length():
         info = json.load(f)
     assert len(feats) == info["n_features"]
     assert len(names) == info["n_features"]
+
+def test_delta_features_present():
+    order = {
+        "strategy": "Butterfly",
+        "premium": 1,
+        "predicted_price": 5850,
+        "price": 5845,
+        "short_term": 5850,
+        "long_term": 5860,
+    }
+    feats, names = asyncio.run(generate(order))
+    delta_features = [
+        "short_term",
+        "long_term",
+        "has_delta_data",
+        "short_long_spread",
+        "short_long_ratio",
+        "price_vs_short",
+        "price_vs_long",
+        "predicted_vs_short",
+        "predicted_vs_long",
+        "delta_convergence",
+        "predictions_aligned",
+    ]
+    for f in delta_features:
+        assert f in names

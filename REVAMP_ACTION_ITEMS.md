@@ -35,6 +35,7 @@
 - [x] Configure model routing in config.yaml
 - [x] Fix VIX change calculations in data provider
 - [x] Add risk/reward calculator endpoint and parser (Phase 7)
+- [x] Integrate delta feature support in real-time API (Phase 0)
 
 ### Documentation
 - [x] Update multi-model overview

@@ -42,6 +42,10 @@ class EnhancedDiscordParser:
                             trade["strikes"], trade["premium"], trade["action"], trade["option_type"], trade["quantity"]
                         )
                     trade.update(rr)
+                    if "short_term" in result["predictions"]:
+                        trade["short_term"] = result["predictions"]["short_term"]
+                    if "long_term" in result["predictions"]:
+                        trade["long_term"] = result["predictions"]["long_term"]
                     result["trades"].append(trade)
         return result
 

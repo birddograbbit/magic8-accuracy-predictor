@@ -1,5 +1,5 @@
 {
-  "n_features": 74,
+  "n_features": 85,
   "feature_names": [
     "hour",
     "minute",
@@ -74,7 +74,18 @@
     "pred_predicted",
     "pred_price",
     "pred_difference",
-    "prof_premium"
+    "prof_premium",
+    "short_term",
+    "long_term",
+    "has_delta_data",
+    "short_long_spread",
+    "short_long_ratio",
+    "price_vs_short",
+    "price_vs_long",
+    "predicted_vs_short",
+    "predicted_vs_long",
+    "delta_convergence",
+    "predictions_aligned"
   ],
   "feature_groups": {
     "temporal": [
@@ -156,6 +167,19 @@
     "trade": [
       "premium_normalized",
       "risk_reward_ratio"
+    ],
+    "delta": [
+      "short_term",
+      "long_term",
+      "has_delta_data",
+      "short_long_spread",
+      "short_long_ratio",
+      "price_vs_short",
+      "price_vs_long",
+      "predicted_vs_short",
+      "predicted_vs_long",
+      "delta_convergence",
+      "predictions_aligned"
     ]
   },
   "train_samples": 918900,

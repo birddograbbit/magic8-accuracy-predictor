@@ -117,12 +117,14 @@ def test_prediction_ranges(monkeypatch, scenario, time_label, strategy, symbol):
         "symbol": symbol,
         "premium": 5.0,
         "predicted_price": 5850.0,
+        "short_term": 5850.0,
+        "long_term": 5860.0,
     }
     resp = client.post("/predict", json=payload)
     assert resp.status_code == 200
     data = resp.json()
     assert 0.05 <= data["win_probability"] <= 0.95
-    assert data["n_features"] == 74
+    assert data["n_features"] == 85
     client.__exit__(None, None, None)
 
 
@@ -135,10 +137,12 @@ def test_edge_premiums(monkeypatch, premium):
         "symbol": "SPX",
         "premium": premium,
         "predicted_price": 5850.0,
+        "short_term": 5850.0,
+        "long_term": 5860.0,
     }
     resp = client.post("/predict", json=payload)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["n_features"] == 74
+    assert data["n_features"] == 85
     client.__exit__(None, None, None)
 

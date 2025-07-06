@@ -117,6 +117,11 @@ class RealTimeFeatureGenerator:
             'premium_normalized', 'risk_reward_ratio',
             'pred_predicted', 'pred_price', 'pred_difference', 'prof_premium',
             'strike_distance_pct', 'is_0dte'
+            , 'short_term', 'long_term', 'has_delta_data',
+            'short_long_spread', 'short_long_ratio',
+            'price_vs_short', 'price_vs_long',
+            'predicted_vs_short', 'predicted_vs_long',
+            'delta_convergence', 'predictions_aligned'
         ]
 
     async def _ensure_connected(self):
@@ -422,7 +427,37 @@ class RealTimeFeatureGenerator:
             features['is_0dte'] = float(expiry_date == today)
         else:
             features['is_0dte'] = 0
-        
+
+        # Delta prediction features
+        short_term = order_details.get('short_term')
+        long_term = order_details.get('long_term')
+        if short_term is not None:
+            features['short_term'] = short_term
+            features['has_delta_data'] = 1.0
+        if long_term is not None:
+            features['long_term'] = long_term
+            features['has_delta_data'] = 1.0
+        if short_term is None and long_term is None:
+            features['has_delta_data'] = 0.0
+
+        if short_term is not None and long_term is not None:
+            features['short_long_spread'] = short_term - long_term
+            features['short_long_ratio'] = short_term / long_term if long_term else 0.0
+
+            price = order_details.get('price')
+            if price:
+                features['price_vs_short'] = (price - short_term) / price * 100
+                features['price_vs_long'] = (price - long_term) / price * 100
+
+            predicted_price = order_details.get('predicted_price')
+            if predicted_price is not None:
+                features['predicted_vs_short'] = predicted_price - short_term
+                features['predicted_vs_long'] = predicted_price - long_term
+
+            features['delta_convergence'] = abs(short_term - long_term)
+            if price is not None:
+                features['predictions_aligned'] = float((short_term > price) == (long_term > price))
+
         return features
     
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:

@@ -29,4 +29,6 @@ model_routing:
 
 `prediction_api_realtime.py` automatically loads these models if the configuration is present and routes prediction requests based on the incoming symbol.
 
+The real-time feature generator now includes Magic8 delta predictions (`short_term` and `long_term`). These values are passed through the API request and converted into derived features such as `short_long_spread` and `price_vs_short` to align with the training data.
+
 Use `symbol_analysis_report.py` to compute per-symbol profit statistics to help determine grouping strategies.

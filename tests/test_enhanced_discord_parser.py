@@ -10,3 +10,5 @@ def test_parse_message():
     bfly = result["trades"][0]
     assert bfly["strategy"] == "Butterfly"
     assert bfly["risk_reward_ratio"] > 0
+    assert "short_term" in bfly
+    assert "long_term" in bfly
