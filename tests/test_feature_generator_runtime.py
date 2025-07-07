@@ -83,10 +83,26 @@ class AltVIXProvider(DummyProvider):
         return {"price": 16}
 
 
+class AltPriceProvider(DummyProvider):
+    async def get_current_price(self, symbol: str):
+        return {"price": 1}
+
+
 def test_vix_key_fallback():
     path = Path("data/phase1_processed/feature_info.json")
     provider = AltVIXProvider()
     gen = RealTimeFeatureGenerator(provider, feature_info_path=str(path))
     feats, names = asyncio.run(gen.generate_features("SPX", {"strategy": "Butterfly", "premium": 1, "predicted_price": 1}))
     assert "vix" in names
+
+
+def test_price_key_fallback():
+    path = Path("data/phase1_processed/feature_info.json")
+    provider = AltPriceProvider()
+    gen = RealTimeFeatureGenerator(provider, feature_info_path=str(path))
+    feats, names = asyncio.run(gen.generate_features("SPX", {"strategy": "Butterfly", "premium": 1, "predicted_price": 1}))
+    with open("data/phase1_processed/feature_info.json") as f:
+        info = json.load(f)
+    assert len(feats) == info["n_features"]
+    assert f"SPX_close" in names
 

@@ -277,21 +277,29 @@ class RealTimeFeatureGenerator:
     ) -> Dict[str, float]:
         """Generate price-based features (5-6 per symbol)."""
         features = {}
-        
-        bars = price_data['bars']
-        current = price_data['current']
-        
-        if not bars:
-            logger.warning(f"No price bars available for {symbol}")
-            return features
+
+        bars = price_data.get('bars')
+        current = price_data.get('current')
+
+        if not bars or not current:
+            logger.warning(f"Incomplete price data for {symbol}")
+            return self._get_default_price_features(symbol)
         
         # Convert to DataFrame for easier calculation
         df = pd.DataFrame(bars)
         df['time'] = pd.to_datetime(df['time'])
         df.set_index('time', inplace=True)
-        
-        # Current price
-        current_price = current['last']
+
+        # Current price with fallback options
+        current_price = (
+            current.get('last')
+            or current.get('close')
+            or current.get('price')
+        )
+        if current_price is None:
+            logger.warning(f"Missing 'last' price for {symbol}")
+            return self._get_default_price_features(symbol)
+
         features[f'{symbol}_close'] = current_price
         
         # SMA features
@@ -325,7 +333,19 @@ class RealTimeFeatureGenerator:
             if high_20 > low_20:
                 price_position = (current_price - low_20) / (high_20 - low_20)
                 features[f'{symbol}_price_position'] = price_position
-        
+
+        return features
+
+    def _get_default_price_features(self, symbol: str) -> Dict[str, float]:
+        """Return default price features when data is unavailable."""
+        features = {f"{symbol}_close": 0.0}
+        for period in self.price_config.get('sma_periods', [20]):
+            features[f"{symbol}_sma_{period}"] = 0.0
+        for period in self.price_config.get('momentum_periods', [5]):
+            features[f"{symbol}_momentum_{period}"] = 0.0
+        features[f"{symbol}_volatility_20"] = 0.0
+        features[f"{symbol}_rsi"] = 0.0
+        features[f"{symbol}_price_position"] = 0.0
         return features
     
     def _generate_vix_features(self, vix_data: Dict) -> Dict[str, float]:
