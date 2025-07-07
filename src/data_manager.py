@@ -160,8 +160,49 @@ class DataManager:
         return []
 
     async def get_vix_data(self) -> Dict[str, Any]:
-        """Get current VIX market data using existing helpers."""
-        return await self.get_market_data("VIX")
+        """Get current VIX data with proper fields."""
+        key = "vix_data"
+        if self._is_cache_valid(key, self.price_cache_ttl):
+            return self.cache[key]["data"]
+
+        if self.use_standalone and self._ib_provider:
+            try:
+                data = await self._ib_provider.get_vix_data()
+                self._update_cache(key, data)
+                return data
+            except Exception as e:
+                logger.warning(f"IBKR VIX data fetch failed: {e}")
+
+        if self._companion_session:
+            try:
+                url = f"{self.companion_url}/api/market_data/VIX/quote"
+                async with self._companion_session.get(url, timeout=5) as resp:
+                    if resp.status == 200:
+                        payload = await resp.json()
+                        data = {
+                            "last": float(payload.get("last", 0)),
+                            "change": float(payload.get("change", 0)),
+                            "change_pct": float(payload.get("change_pct", 0)),
+                            "high": float(payload.get("high", 0)),
+                            "low": float(payload.get("low", 0)),
+                            "time": payload.get("time", datetime.now().isoformat()),
+                        }
+                        self._update_cache(key, data)
+                        return data
+            except Exception as e:
+                logger.debug(f"Companion VIX fetch failed: {e}")
+
+        mock = self._get_mock_data("VIX")
+        data = {
+            "last": mock["price"],
+            "change": 0,
+            "change_pct": 0,
+            "high": mock["price"],
+            "low": mock["price"],
+            "time": datetime.now().isoformat(),
+        }
+        self._update_cache(key, data)
+        return data
 
     def _is_subscription_error(self, error_msg: str) -> bool:
         """Check if the error is due to missing market data subscription."""

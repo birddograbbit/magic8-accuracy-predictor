@@ -240,7 +240,7 @@ curl -X POST http://localhost:8000/predict/batch \
 
 ##### Log Monitoring
 ```bash
-# View API logs
+# View API logs (directory created automatically)
 tail -f logs/prediction_api.log
 
 # Monitor cache performance

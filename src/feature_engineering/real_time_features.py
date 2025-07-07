@@ -332,11 +332,15 @@ class RealTimeFeatureGenerator:
         """Generate VIX-based features (6-8 features)."""
         features = {}
         
-        current = vix_data['current']
-        bars = vix_data['bars']
-        
+        current = vix_data.get('current', {})
+        bars = vix_data.get('bars', [])
+
         # Current VIX level
-        vix_level = current['last']
+        vix_level = (
+            current.get('last')
+            or current.get('close')
+            or current.get('price', 0)
+        )
         features['vix'] = vix_level
 
         # VIX change (percentage)
