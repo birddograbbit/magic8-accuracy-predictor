@@ -22,7 +22,9 @@ class DataManager:
     def __init__(self, config: dict):
         self.config = config
         self.cache: Dict[str, Dict[str, Any]] = {}
-        self.price_cache_ttl = timedelta(seconds=30)
+        perf_cfg = config.get("performance", {}).get("cache", {})
+        market_ttl = perf_cfg.get("market_data_ttl")
+        self.price_cache_ttl = timedelta(seconds=market_ttl or 30)
         self.bars_cache_ttl = timedelta(minutes=5)
         self.companion_url = config.get("companion", {}).get("base_url", "http://localhost:8765")
         self.use_standalone = config.get("standalone", {}).get("enabled", True)
@@ -246,3 +248,11 @@ class DataManager:
 
     def _update_cache(self, key: str, data: Dict[str, Any]):
         self.cache[key] = {"data": data, "timestamp": datetime.now()}
+
+    async def warm_cache(self, symbols: list[str]):
+        """Pre-fetch market data for common symbols."""
+        for sym in symbols:
+            try:
+                await self.get_market_data(sym)
+            except Exception as exc:
+                logger.debug("Warm cache failed for %s: %s", sym, exc)

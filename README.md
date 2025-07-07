@@ -358,6 +358,7 @@ curl -X POST http://localhost:8000/calculate_risk_reward \
 - `GET /` - Health check and model status (shows loaded models)
 - `GET /market/{symbol}` - Real-time market data
 - `POST /predict` - Get prediction with hierarchical model selection
+- `POST /predict/batch` - Predict multiple trades in one call
 - `POST /calculate_risk_reward` - Calculate max profit/loss and breakevens
 
 ### Data Source Configuration
@@ -374,6 +375,16 @@ data_source:
     ib_host: "127.0.0.1"
     ib_port: 7497
     client_id: 99
+```
+
+### Caching Configuration
+Adjust cache TTLs in `config/config.yaml` under `performance.cache`:
+```yaml
+performance:
+  cache:
+    market_data_ttl: 300   # seconds
+    feature_ttl: 60        # seconds
+    prediction_ttl: 300    # seconds
 ```
 
 ## 📚 Documentation

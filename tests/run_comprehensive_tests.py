@@ -12,6 +12,7 @@ cmd = [
     "--cov=src",
     "tests/test_api_comprehensive.py",
     "tests/test_evaluation_metrics.py",
+    "tests/test_batch_prediction.py",
 ]
 result = subprocess.run(cmd)
 sys.exit(result.returncode)
