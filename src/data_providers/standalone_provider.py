@@ -55,7 +55,9 @@ class StandaloneDataProvider(BaseDataProvider):
         """Connect to IBKR using the shared connection manager."""
         try:
             manager = IBConnectionManager.instance()
-            self.ib = manager.connect(self.ib_host, self.ib_port, self.client_id)
+            self.ib = await manager.connect_async(
+                self.ib_host, self.ib_port, self.client_id
+            )
 
             def error_handler(reqId, errorCode, errorString, contract):
                 if errorCode == 354:
