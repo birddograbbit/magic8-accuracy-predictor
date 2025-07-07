@@ -19,7 +19,7 @@ This document lists all columns produced by `process_magic8_data_optimized_v2.py
 - `reward`
 - `ratio`
 - `profit`
-- `win`
+- `target` - binary win/loss indicator derived from the `profit` column
 
 ## Trades Sheet Columns
 - `source`

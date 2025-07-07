@@ -44,7 +44,13 @@ class SymbolStrategyModelTrainer:
                 logger.info("Training model for %s: %d samples", model_key, len(strat_df))
 
                 X = strat_df[feature_cols]
-                y = strat_df['win']
+                if 'target' not in strat_df.columns:
+                    raise ValueError("Missing 'target' column in training data")
+                y = strat_df['target']
+                if y.isna().all():
+                    raise ValueError(
+                        f"Target column for {model_key} contains only NaN values"
+                    )
 
                 X_train, X_test, y_train, y_test = train_test_split(
                     X, y, test_size=0.2, random_state=42, stratify=y
