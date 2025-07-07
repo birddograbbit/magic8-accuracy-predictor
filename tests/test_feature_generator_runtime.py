@@ -76,3 +76,17 @@ def test_delta_features_present():
     ]
     for f in delta_features:
         assert f in names
+
+
+class AltVIXProvider(DummyProvider):
+    async def get_vix_data(self):
+        return {"price": 16}
+
+
+def test_vix_key_fallback():
+    path = Path("data/phase1_processed/feature_info.json")
+    provider = AltVIXProvider()
+    gen = RealTimeFeatureGenerator(provider, feature_info_path=str(path))
+    feats, names = asyncio.run(gen.generate_features("SPX", {"strategy": "Butterfly", "premium": 1, "predicted_price": 1}))
+    assert "vix" in names
+

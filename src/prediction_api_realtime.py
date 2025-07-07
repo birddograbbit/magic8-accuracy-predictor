@@ -9,6 +9,20 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict
 
+LOG_DIR = Path("logs")
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / "prediction_api.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger(__name__)
+
 import joblib
 import numpy as np
 import yaml
@@ -21,9 +35,6 @@ from feature_engineering.real_time_features import RealTimeFeatureGenerator
 from models.hierarchical_predictor import HierarchicalPredictor
 from risk_reward_calculator import RiskRewardCalculator
 from cache_manager import CacheManager
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 MODEL_PATH = "models/xgboost_phase1_model.pkl"
 FEATURE_INFO_PATH = "data/phase1_processed/feature_info.json"
