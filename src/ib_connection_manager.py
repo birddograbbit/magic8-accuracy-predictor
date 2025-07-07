@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import Optional
 from ib_insync import IB
 
@@ -14,6 +15,7 @@ class IBConnectionManager:
         self.host = "127.0.0.1"
         self.port = 7497
         self.client_id = 99
+        self._lock = asyncio.Lock()
 
     @classmethod
     def instance(cls) -> "IBConnectionManager":
@@ -22,6 +24,15 @@ class IBConnectionManager:
         return cls._instance
 
     def connect(self, host: str = "127.0.0.1", port: int = 7497, client_id: int = 99) -> IB:
+        """Synchronous wrapper around :meth:`connect_async`."""
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Avoid run_until_complete if loop is already running
+            raise RuntimeError("connect() cannot be called from an event loop; use connect_async")
+        return loop.run_until_complete(self.connect_async(host, port, client_id))
+
+    async def connect_async(self, host: str = "127.0.0.1", port: int = 7497, client_id: int = 99) -> IB:
+        """Asynchronously connect to IBKR using ib_insync."""
         if self.ib and self.ib.isConnected():
             return self.ib
 
@@ -29,14 +40,20 @@ class IBConnectionManager:
         self.port = port
         self.client_id = client_id
 
-        self.ib = IB()
-        try:
-            self.ib.connect(host, port, clientId=client_id)
-            logger.info(f"Connected to IBKR at {host}:{port} clientId={client_id}")
-        except Exception as e:
-            logger.error(f"Failed to connect to IBKR: {e}")
-            self.ib = None
-            raise
+        async with self._lock:
+            if self.ib and self.ib.isConnected():
+                return self.ib
+
+            self.ib = IB()
+            try:
+                await self.ib.connectAsync(host, port, clientId=client_id)
+                logger.info(
+                    f"Connected to IBKR at {host}:{port} clientId={client_id}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to connect to IBKR: {e}")
+                self.ib = None
+                raise
         return self.ib
 
     def get_ib(self) -> IB:
