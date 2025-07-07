@@ -7,11 +7,12 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 import joblib
 import numpy as np
 import yaml
+import time
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
@@ -19,6 +20,7 @@ from data_manager import DataManager
 from feature_engineering.real_time_features import RealTimeFeatureGenerator
 from models.hierarchical_predictor import HierarchicalPredictor
 from risk_reward_calculator import RiskRewardCalculator
+from cache_manager import CacheManager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -60,12 +62,24 @@ class PredictionResponse(BaseModel):
     data_source: str
     n_features: int
 
+
+class BatchTradeRequest(BaseModel):
+    requests: List[TradeRequest]
+    share_market_data: bool = True
+
+
+class BatchPredictionResponse(BaseModel):
+    predictions: List[PredictionResponse]
+    batch_metrics: Dict[str, int]
+
 model = None
 predictor: HierarchicalPredictor | None = None
 thresholds_individual: dict = {}
 thresholds_grouped: dict = {}
 feature_gen: RealTimeFeatureGenerator
 manager: DataManager
+cache_manager: CacheManager
+batch_max_size: int = 10
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -75,10 +89,20 @@ async def lifespan(app: FastAPI):
     # Load config
     with open(CONFIG_PATH) as f:
         cfg = yaml.safe_load(f)
-    manager = DataManager(cfg.get("data_source", {}))
+    perf_cfg = cfg.get("performance", {}).get("cache", {})
+    manager = DataManager({**cfg.get("data_source", {}), "performance": {"cache": perf_cfg}})
     await manager.connect()
-    
+
     feature_gen = RealTimeFeatureGenerator(manager, feature_info_path=FEATURE_INFO_PATH)
+    global cache_manager
+    cache_manager = CacheManager(
+        feature_ttl=perf_cfg.get("feature_ttl", 60),
+        prediction_ttl=perf_cfg.get("prediction_ttl", 300),
+        max_size=perf_cfg.get("max_size", 1000),
+    )
+    global batch_max_size
+    batch_cfg = cfg.get("performance", {}).get("batch_predictions", {})
+    batch_max_size = batch_cfg.get("max_batch_size", 10)
 
     # Multi-model configuration
     model_map = cfg.get('models')
@@ -172,29 +196,40 @@ async def calculate_risk_reward(request: TradeInstruction):
         "breakevens": {k: v for k, v in result.items() if "breakeven" in k},
     }
 
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(req: TradeRequest):
+
+async def _predict_trade(req: TradeRequest) -> PredictionResponse:
     if model is None and predictor is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     order = req.model_dump()
-    features, names = await feature_gen.generate_features(req.symbol, order)
-    X = np.array([features])
-    if predictor:
-        proba = predictor.predict_proba(req.symbol, req.strategy, X)[0][1]
+    ts = time.time()
+    feat_key = cache_manager.get_feature_key(req.symbol, ts)
+    features = cache_manager.get_feature(feat_key)
+    if features is None:
+        features, _ = await feature_gen.generate_features(req.symbol, order)
+        cache_manager.set_feature(feat_key, features)
 
-        threshold = 0.5
-        if req.symbol in predictor.symbol_models or f"{req.symbol}_{req.strategy}" in predictor.symbol_strategy_models:
-            sym_thresh = thresholds_individual.get(req.symbol, {})
-            threshold = sym_thresh.get(req.strategy, 0.5)
+    pred_key = cache_manager.get_prediction_key(req.symbol, req.strategy, features)
+    proba = cache_manager.get_prediction(pred_key)
+
+    threshold = 0.5
+    if proba is None:
+        X = np.array([features])
+        if predictor:
+            proba = predictor.predict_proba(req.symbol, req.strategy, X)[0][1]
+
+            if req.symbol in predictor.symbol_models or f"{req.symbol}_{req.strategy}" in predictor.symbol_strategy_models:
+                sym_thresh = thresholds_individual.get(req.symbol, {})
+                threshold = sym_thresh.get(req.strategy, 0.5)
+            else:
+                for group_name, group_thresholds in thresholds_grouped.items():
+                    if req.symbol in group_name.split('_'):
+                        threshold = group_thresholds.get(req.symbol, {}).get(req.strategy, 0.5)
+                        break
         else:
-            for group_name, group_thresholds in thresholds_grouped.items():
-                if req.symbol in group_name.split('_'):
-                    threshold = group_thresholds.get(req.symbol, {}).get(req.strategy, 0.5)
-                    break
-    else:
-        proba = model.predict_proba(X)[0][1]
-        threshold = 0.5
+            proba = model.predict_proba(X)[0][1]
+        cache_manager.set_prediction(pred_key, proba)
+
     data = await manager.get_market_data(req.symbol)
 
     if (req.risk is None or req.reward is None) and req.strikes:
@@ -205,7 +240,11 @@ async def predict(req: TradeRequest):
             rr = calc.calculate_iron_condor(req.strikes, req.premium, req.action or "SELL", req.quantity)
         elif req.strategy == "Vertical":
             rr = calc.calculate_vertical(
-                req.strikes, req.premium, req.action or "SELL", req.option_type or "CALL", req.quantity
+                req.strikes,
+                req.premium,
+                req.action or "SELL",
+                req.option_type or "CALL",
+                req.quantity,
             )
         else:
             rr = None
@@ -222,6 +261,18 @@ async def predict(req: TradeRequest):
         data_source=data["source"],
         n_features=len(features),
     )
+
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(req: TradeRequest):
+    return await _predict_trade(req)
+
+
+@app.post("/predict/batch", response_model=BatchPredictionResponse)
+async def predict_batch(request: BatchTradeRequest):
+    trades = request.requests[:batch_max_size]
+    results = [await _predict_trade(trade) for trade in trades]
+    metrics = cache_manager.stats()
+    return BatchPredictionResponse(predictions=results, batch_metrics=metrics)
 
 if __name__ == "__main__":
     import uvicorn

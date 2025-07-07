@@ -105,6 +105,16 @@ Predict a single trade outcome.
 
 ### `POST /predict/batch`
 Predict multiple trades at once.
+Request body:
+```json
+{
+  "requests": [
+    {"strategy": "Butterfly", "symbol": "SPX", "premium": 25.5, "predicted_price": 5850},
+    {"strategy": "Iron Condor", "symbol": "SPX", "premium": 0.65, "predicted_price": 5850}
+  ]
+}
+```
+Returns a list of `PredictionResponse` objects and cache metrics.
 
 ### `GET /feature-importance`
 Get the most important features from the model.
@@ -480,6 +490,7 @@ if __name__ == "__main__":
 - Move prediction service closer to Magic8
 - Use batch predictions
 - Cache market data
+- Enable feature and prediction caching (see `performance.cache` in config)
 
 ## Next Steps
 

@@ -102,7 +102,9 @@ integration:
 performance:
   cache:
     enabled: true
-    ttl_seconds: 300
+    market_data_ttl: 300
+    feature_ttl: 60
+    prediction_ttl: 300
     max_size: 1000
     
   batch_predictions:
