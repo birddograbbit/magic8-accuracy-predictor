@@ -86,6 +86,10 @@ python train_symbol_models.py data/symbol_specific models/individual data/symbol
 # - ... (model and features for each symbol)
 ```
 
+`prepare_symbol_data()` automatically adds a `target` column derived
+from the `profit` column (1 for wins, 0 for losses). The training
+scripts rely on this column for supervised learning.
+
 #### Step 4a: Analyze Profit Scales by Strategy
 ```bash
 # Analyze profit ranges for correct symbol grouping
