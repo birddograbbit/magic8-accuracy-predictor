@@ -63,7 +63,7 @@ curl -X POST http://localhost:8000/predict \
 curl -X POST http://localhost:8000/predict/batch \
   -H "Content-Type: application/json" \
   -d '{
-    "trades": [
+    "requests": [
       {"strategy": "Butterfly", "symbol": "SPX", "premium": 25.50, "predicted_price": 5850.00},
       {"strategy": "Iron Condor", "symbol": "SPX", "premium": 0.65, "predicted_price": 5850.00}
     ]
@@ -183,7 +183,7 @@ def send_to_ml_service(orders):
     webhook_url = "http://localhost:8000/predict/batch"
     
     payload = {
-        "trades": [
+        "requests": [
             {
                 "strategy": order['strategy'],
                 "symbol": order['symbol'],
@@ -397,7 +397,7 @@ class Magic8MLIntegration:
         # Get predictions
         response = requests.post(
             f"{self.ml_api_url}/predict/batch",
-            json={"trades": trades}
+            json={"requests": trades}
         )
         
         if response.status_code != 200:

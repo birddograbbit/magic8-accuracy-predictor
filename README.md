@@ -245,6 +245,9 @@ tail -f logs/prediction_api.log
 
 # Monitor cache performance
 grep "cache" logs/prediction_api.log | tail -20
+
+# Watch prediction results
+tail -f logs/predictions.jsonl | jq
 ```
 
 ## 📊 Key Performance Optimizations

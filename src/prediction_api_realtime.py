@@ -35,6 +35,7 @@ from feature_engineering.real_time_features import RealTimeFeatureGenerator
 from models.hierarchical_predictor import HierarchicalPredictor
 from risk_reward_calculator import RiskRewardCalculator
 from cache_manager import CacheManager
+from utils.prediction_logger import PredictionLogger
 
 MODEL_PATH = "models/xgboost_phase1_model.pkl"
 FEATURE_INFO_PATH = "data/phase1_processed/feature_info.json"
@@ -91,6 +92,7 @@ feature_gen: RealTimeFeatureGenerator
 manager: DataManager
 cache_manager: CacheManager
 batch_max_size: int = 10
+prediction_logger: PredictionLogger | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -114,6 +116,12 @@ async def lifespan(app: FastAPI):
     global batch_max_size
     batch_cfg = cfg.get("performance", {}).get("batch_predictions", {})
     batch_max_size = batch_cfg.get("max_batch_size", 10)
+
+    monitor_cfg = cfg.get("integration", {}).get("monitoring", {})
+    if monitor_cfg.get("enabled") and monitor_cfg.get("track_predictions") and monitor_cfg.get("save_to_file"):
+        log_file = monitor_cfg.get("predictions_file", "logs/predictions.jsonl")
+        global prediction_logger
+        prediction_logger = PredictionLogger(log_file)
 
     # Multi-model configuration
     model_map = cfg.get('models')
@@ -263,7 +271,7 @@ async def _predict_trade(req: TradeRequest) -> PredictionResponse:
             req.risk = rr["max_loss"]
             req.reward = rr["max_profit"]
 
-    return PredictionResponse(
+    response = PredictionResponse(
         timestamp=datetime.now().isoformat(),
         symbol=req.symbol,
         strategy=req.strategy,
@@ -272,6 +280,11 @@ async def _predict_trade(req: TradeRequest) -> PredictionResponse:
         data_source=data["source"],
         n_features=len(features),
     )
+
+    if prediction_logger:
+        await prediction_logger.log_prediction(order, response, threshold)
+
+    return response
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(req: TradeRequest):

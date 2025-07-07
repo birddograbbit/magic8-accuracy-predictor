@@ -11,6 +11,7 @@ PyYAML>=6.0  # For config files
 # Async/API dependencies
 aiohttp>=3.9.0  # For async HTTP requests
 requests>=2.31.0  # For sync HTTP requests
+httpx>=0.25.0  # Required for FastAPI TestClient
 asyncio>=3.4.3  # Async support
 
 # Deep learning
