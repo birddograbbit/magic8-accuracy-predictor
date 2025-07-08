@@ -171,30 +171,23 @@ class StandaloneDataProvider(BaseDataProvider):
         if symbol in self._failed_symbols:
             raise Exception(f"Market data subscription missing for {symbol}")
         
+        ticker = None
         try:
             contract = self._get_contract(symbol)
-            
+
             # Request market data
             ticker = self.ib.reqMktData(contract, '', False, False)
-            
+
             # Wait for data with timeout
             timeout = 5  # Increased timeout
             start_time = asyncio.get_event_loop().time()
-            
+
             while (ticker.last is None or math.isnan(ticker.last)) and ticker.close is None:
                 await asyncio.sleep(0.1)
                 if asyncio.get_event_loop().time() - start_time > timeout:
-                    # Cancel the market data request
-                    self.ib.cancelMktData(ticker)
-                    
-                    # Check if it's a subscription error
                     if symbol in self._failed_symbols:
                         raise Exception(f"Market data subscription missing for {symbol}")
-                    else:
-                        raise Exception(f"Timeout waiting for market data for {symbol}")
-            
-            # Cancel market data request after getting the data
-            self.ib.cancelMktData(ticker)
+                    raise Exception(f"Timeout waiting for market data for {symbol}")
             
             # Helper function to safely convert to int, handling NaN
             def safe_int(value):
@@ -221,6 +214,12 @@ class StandaloneDataProvider(BaseDataProvider):
         except Exception as e:
             # Re-raise the exception to be handled by DataManager
             raise e
+        finally:
+            if ticker is not None:
+                try:
+                    self.ib.cancelMktData(ticker)
+                except Exception as cancel_error:
+                    logger.debug(f"Error cancelling market data for {symbol}: {cancel_error}")
 
     async def _update_daily_data(self, symbol: str):
         """Fetch daily bar data to update previous close and high/low."""
