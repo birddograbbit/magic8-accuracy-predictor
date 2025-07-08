@@ -5,6 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 import joblib
 from typing import Dict
+import logging
+import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class HierarchicalPredictor:
@@ -43,16 +47,46 @@ class HierarchicalPredictor:
     def predict_proba(self, symbol: str, strategy: str, features):
         """Return probability using available models with fallback."""
         key = f"{symbol}_{strategy}"
+
+        def _align(model, feats: np.ndarray) -> np.ndarray:
+            expected = None
+            if hasattr(model, "n_features_in_"):
+                expected = int(model.n_features_in_)
+            elif hasattr(model, "get_booster"):
+                booster = model.get_booster()
+                num = booster.attr("num_feature")
+                if num is not None:
+                    expected = int(num)
+
+            if expected is None:
+                return feats
+
+            current = feats.shape[1]
+            if current > expected:
+                logger.warning(
+                    f"Feature mismatch for {key}: model expects {expected}, got {current}. Using first {expected} features."
+                )
+                return feats[:, :expected]
+            if current < expected:
+                raise ValueError(
+                    f"Model for {key} expects {expected} features, got {current}"
+                )
+            return feats
+
         if key in self.symbol_strategy_models:
-            return self.symbol_strategy_models[key].predict_proba(features)
+            aligned = _align(self.symbol_strategy_models[key], features)
+            return self.symbol_strategy_models[key].predict_proba(aligned)
 
         if symbol in self.symbol_models:
-            return self.symbol_models[symbol].predict_proba(features)
+            aligned = _align(self.symbol_models[symbol], features)
+            return self.symbol_models[symbol].predict_proba(aligned)
 
         if strategy in self.strategy_models:
-            return self.strategy_models[strategy].predict_proba(features)
+            aligned = _align(self.strategy_models[strategy], features)
+            return self.strategy_models[strategy].predict_proba(aligned)
 
         if self.default_model:
-            return self.default_model.predict_proba(features)
+            aligned = _align(self.default_model, features)
+            return self.default_model.predict_proba(aligned)
 
         raise ValueError(f"No model available for {symbol} {strategy}")
