@@ -215,11 +215,13 @@ class StandaloneDataProvider(BaseDataProvider):
             # Re-raise the exception to be handled by DataManager
             raise e
         finally:
-            if ticker is not None:
+            if ticker is not None and hasattr(ticker, "reqId") and ticker.reqId is not None:
                 try:
                     self.ib.cancelMktData(ticker)
                 except Exception as cancel_error:
-                    logger.debug(f"Error cancelling market data for {symbol}: {cancel_error}")
+                    logger.debug(
+                        f"Error cancelling market data for {symbol}: {cancel_error}"
+                    )
 
     async def _update_daily_data(self, symbol: str):
         """Fetch daily bar data to update previous close and high/low."""

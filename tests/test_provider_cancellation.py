@@ -11,6 +11,7 @@ class FakeTicker:
         self.ask = 100.5
         self.bidSize = 1
         self.askSize = 1
+        self.reqId = 1
 
 
 class FakeIB:

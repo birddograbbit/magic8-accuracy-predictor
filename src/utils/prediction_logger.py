@@ -51,13 +51,13 @@ class PredictionLogger:
                 "premium": order.get("premium", 0),
                 "risk": order.get("risk", 0),
                 "reward": order.get("reward", 0),
-                "win_probability": prediction_result.win_probability if prediction_result else 0,
-                "confidence": prediction_result.confidence if prediction_result else 0,
-                "prediction_time_ms": prediction_result.prediction_time_ms if prediction_result else 0,
-                "features_used": prediction_result.features_used if prediction_result else 0,
+                "win_probability": getattr(prediction_result, "win_probability", 0),
+                "confidence": getattr(prediction_result, "confidence", 0.0),
+                "prediction_time_ms": getattr(prediction_result, "prediction_time_ms", 0.0),
+                "features_used": getattr(prediction_result, "features_used", 0),
                 "threshold": threshold,
-                "approved": (prediction_result.win_probability >= threshold) if prediction_result else False,
-                "model_version": prediction_result.model_version if prediction_result else "unknown"
+                "approved": getattr(prediction_result, "win_probability", 0) >= threshold,
+                "model_version": getattr(prediction_result, "model_version", "unknown"),
             }
             
             # Add metadata if provided
