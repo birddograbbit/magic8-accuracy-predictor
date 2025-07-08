@@ -82,9 +82,9 @@ class SymbolStrategyModelTrainer:
         """Save trained models to directory."""
         out_dir.mkdir(parents=True, exist_ok=True)
         for key, info in self.models.items():
-            model_path = out_dir / f"{key}_model.pkl"
+            model_path = out_dir / f"{key}_model.json"
             feature_path = out_dir / f"{key}_features.pkl"
-            joblib.dump(info['model'], model_path)
+            info['model'].get_booster().save_model(str(model_path))
             joblib.dump(info['features'], feature_path)
             info['model_path'] = str(model_path)
             info['feature_path'] = str(feature_path)

@@ -48,6 +48,11 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Recommended versions
+# - Python 3.10
+# - scikit-learn 1.5
+# - XGBoost 2.x (models saved via Booster.save_model for compatibility)
 ```
 
 #### Step 2: Process Raw Magic8 Data

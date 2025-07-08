@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import joblib
+import xgboost as xgb
 from typing import Dict
 import logging
 import numpy as np
@@ -26,23 +27,36 @@ class HierarchicalPredictor:
         self.strategy_models: Dict[str, object] = {}
         self.default_model = None
 
+        def _load(path: str):
+            p = Path(path)
+            if p.suffix == ".json":
+                booster = xgb.Booster()
+                booster.load_model(str(p))
+                return booster
+            try:
+                booster = xgb.Booster()
+                booster.load_model(str(p))
+                return booster
+            except Exception:
+                return joblib.load(p)
+
         if symbol_strategy_paths:
             for key, p in symbol_strategy_paths.items():
                 if p and Path(p).exists():
-                    self.symbol_strategy_models[key] = joblib.load(p)
+                    self.symbol_strategy_models[key] = _load(p)
 
         if symbol_paths:
             for key, p in symbol_paths.items():
                 if p and Path(p).exists():
-                    self.symbol_models[key] = joblib.load(p)
+                    self.symbol_models[key] = _load(p)
 
         if strategy_paths:
             for key, p in strategy_paths.items():
                 if p and Path(p).exists():
-                    self.strategy_models[key] = joblib.load(p)
+                    self.strategy_models[key] = _load(p)
 
         if default_path and Path(default_path).exists():
-            self.default_model = joblib.load(default_path)
+            self.default_model = _load(default_path)
 
     def predict_proba(self, symbol: str, strategy: str, features):
         """Return probability using available models with fallback."""
