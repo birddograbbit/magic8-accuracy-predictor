@@ -13,10 +13,12 @@ import logging
 import math
 import json
 from datetime import datetime, time
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import joblib
 
 # Use absolute import for package modules
 try:
@@ -44,6 +46,7 @@ class RealTimeFeatureGenerator:
         data_provider: BaseDataProvider,
         config: Optional[Dict] = None,
         feature_info_path: str = "data/phase1_processed/feature_info.json",
+        feature_dir: str = "models/individual",
     ):
         """
         Initialize the feature generator.
@@ -51,6 +54,8 @@ class RealTimeFeatureGenerator:
         Args:
             data_provider: Data provider instance
             config: Optional configuration for feature generation
+            feature_info_path: Path to global feature info JSON
+            feature_dir: Directory containing symbol-specific feature lists
         """
         self.data_provider = data_provider
         self.config = config or self._default_config()
@@ -60,10 +65,39 @@ class RealTimeFeatureGenerator:
         self.price_config = self.config.get('price', {})
         self.vix_config = self.config.get('vix', {})
 
-        # Load feature order
-        self.feature_order = self._load_feature_order(feature_info_path)
+        # Load global feature order
+        self.global_feature_order = self._load_feature_order(feature_info_path)
+        self.symbol_feature_orders: Dict[str, List[str]] = {}
+
+        # Default to global order
+        self.feature_order = self.global_feature_order
+        self.feature_dir = feature_dir
 
         logger.info("RealTimeFeatureGenerator initialized")
+
+    def _load_symbol_feature_order(self, symbol: str) -> List[str]:
+        """Load feature order for a specific symbol if available."""
+        if symbol in self.symbol_feature_orders:
+            return self.symbol_feature_orders[symbol]
+
+        path = Path(self.feature_dir) / f"{symbol}_trades_features.pkl"
+        if path.exists():
+            try:
+                order = joblib.load(path)
+                if isinstance(order, list) and order:
+                    self.symbol_feature_orders[symbol] = order
+                    logger.info("Loaded %d features for %s from %s", len(order), symbol, path)
+                    return order
+            except Exception as e:  # pragma: no cover - runtime safeguard
+                logger.warning("Failed to load feature order for %s: %s", symbol, e)
+
+        # Fall back to global order
+        self.symbol_feature_orders[symbol] = self.global_feature_order
+        return self.global_feature_order
+
+    def _get_feature_order(self, symbol: str) -> List[str]:
+        """Return feature order for symbol or global order."""
+        return self.symbol_feature_orders.get(symbol) or self._load_symbol_feature_order(symbol)
 
     def _default_config(self) -> Dict:
         """Get default feature configuration matching Phase 1."""
@@ -194,7 +228,8 @@ class RealTimeFeatureGenerator:
         features.update(self._generate_trade_features(symbol, order_details))
         
         # Convert to ordered list matching training features
-        feature_values, feature_names = self._align_features(features)
+        order = self._get_feature_order(symbol)
+        feature_values, feature_names = self._align_features(features, order)
         
         return feature_values, feature_names
     
@@ -497,7 +532,8 @@ class RealTimeFeatureGenerator:
     
     def _align_features(
         self,
-        features: Dict[str, float]
+        features: Dict[str, float],
+        feature_order: Optional[List[str]] = None,
     ) -> Tuple[List[float], List[str]]:
         """
         Align features with training feature order.
@@ -505,7 +541,8 @@ class RealTimeFeatureGenerator:
         Returns:
             Tuple of (feature_values, feature_names)
         """
-        feature_order = self.feature_order
+        if feature_order is None:
+            feature_order = self.feature_order
         
         # Extract values in order, using 0 for missing features
         feature_values = []
