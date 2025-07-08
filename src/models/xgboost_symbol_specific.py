@@ -168,10 +168,11 @@ def train_symbol_model(csv_path: Path, model_dir: Path, features: list = None, t
     
     # Save model and feature list
     model_dir.mkdir(parents=True, exist_ok=True)
-    model_path = model_dir / f"{csv_path.stem}_model.pkl"
+    model_path = model_dir / f"{csv_path.stem}_model.json"
     features_path = model_dir / f"{csv_path.stem}_features.pkl"
-    
-    joblib.dump(model, model_path)
+
+    booster = model if isinstance(model, xgb.Booster) else model.get_booster()
+    booster.save_model(str(model_path))
     joblib.dump(selected_features, features_path)
     
     print(f"Model saved to: {model_path}")

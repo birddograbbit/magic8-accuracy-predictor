@@ -24,6 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 import joblib
+import xgboost as xgb
 import numpy as np
 import yaml
 import time
@@ -131,7 +132,9 @@ async def lifespan(app: FastAPI):
         # Load symbol-strategy models if present
         symbol_strategy_paths = {}
         if symbol_strategy_dir:
-            for p in Path(symbol_strategy_dir).glob('*_model.pkl'):
+            for p in Path(symbol_strategy_dir).glob('*_model.*'):
+                if p.suffix not in {'.pkl', '.json'}:
+                    continue
                 key = p.stem.replace('_model', '')
                 symbol_strategy_paths[key] = str(p)
 
@@ -160,8 +163,15 @@ async def lifespan(app: FastAPI):
                 thresholds_grouped.update(json.load(f))
             logger.info("Loaded grouped thresholds for %d groups", len(thresholds_grouped))
     else:
-        model = joblib.load(MODEL_PATH)
-        logger.info("Model loaded, feature generator ready")
+        json_path = Path(MODEL_PATH).with_suffix('.json')
+        if json_path.exists():
+            model = xgb.Booster()
+            model.load_model(str(json_path))
+            logger.info("Model loaded from %s", json_path)
+        else:
+            model = joblib.load(MODEL_PATH)
+            logger.info("Model loaded from %s", MODEL_PATH)
+        logger.info("Feature generator ready")
     
     yield
     

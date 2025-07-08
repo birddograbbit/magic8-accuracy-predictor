@@ -1,6 +1,7 @@
 """Utilities for training and using multiple models by symbol group."""
 from pathlib import Path
 import joblib
+import xgboost as xgb
 from typing import Dict, List
 
 class SymbolModelStrategy:
@@ -22,13 +23,26 @@ class MultiModelPredictor:
         self.model_routing = model_routing or {}
         
     def load_models(self):
+        def _load(p: str):
+            fp = Path(p)
+            if fp.suffix == ".json":
+                booster = xgb.Booster()
+                booster.load_model(str(fp))
+                return booster
+            try:
+                booster = xgb.Booster()
+                booster.load_model(str(fp))
+                return booster
+            except Exception:
+                return joblib.load(fp)
+
         for sym, path in self.strategy.mapping.items():
             if sym == 'default':
                 continue
             if path and Path(path).exists():
-                self.models[sym] = joblib.load(path)
+                self.models[sym] = _load(path)
         if self.strategy.default and Path(self.strategy.default).exists():
-            self.default_model = joblib.load(self.strategy.default)
+            self.default_model = _load(self.strategy.default)
         else:
             self.default_model = None
 
