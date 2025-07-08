@@ -24,7 +24,7 @@ After training your model with `phase1_data_preparation.py` and `xgboost_baselin
 
 ### 1. Install Dependencies
 ```bash
-pip install fastapi uvicorn pandas numpy xgboost scikit-learn
+pip install -r requirements.txt
 ```
 
 ### 2. Start the Prediction Service

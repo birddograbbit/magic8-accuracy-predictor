@@ -46,10 +46,11 @@ async def generate(order=None):
 
 def test_generated_feature_length():
     feats, names = asyncio.run(generate())
-    with open("data/phase1_processed/feature_info.json") as f:
-        info = json.load(f)
-    assert len(feats) == info["n_features"]
-    assert len(names) == info["n_features"]
+    import joblib
+    order_path = Path("models/individual/SPX_trades_features.pkl")
+    expected = len(joblib.load(order_path)) if order_path.exists() else 0
+    assert len(feats) == expected
+    assert len(names) == expected
 
 def test_delta_features_present():
     order = {
@@ -101,8 +102,9 @@ def test_price_key_fallback():
     provider = AltPriceProvider()
     gen = RealTimeFeatureGenerator(provider, feature_info_path=str(path))
     feats, names = asyncio.run(gen.generate_features("SPX", {"strategy": "Butterfly", "premium": 1, "predicted_price": 1}))
-    with open("data/phase1_processed/feature_info.json") as f:
-        info = json.load(f)
-    assert len(feats) == info["n_features"]
+    import joblib
+    order_path = Path("models/individual/SPX_trades_features.pkl")
+    expected = len(joblib.load(order_path)) if order_path.exists() else 0
+    assert len(feats) == expected
     assert f"SPX_close" in names
 
