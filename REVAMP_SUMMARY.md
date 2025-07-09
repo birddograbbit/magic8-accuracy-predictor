@@ -1,6 +1,6 @@
 # Magic8 Accuracy Predictor - Revamp Summary
 
-**Last Updated**: January 2025  
+**Last Updated**: July 2025
 **Status**: 98% Complete - Ready for Production Deployment
 
 ## 🎯 Quick Status Overview
@@ -83,6 +83,11 @@ model_routing:
    - Enable paper trading
    - Set up monitoring
 
----
+### July 2025 Updates
+- Converted all XGBoost models to JSON format for long-term compatibility
+- Added `convert_models_to_native.py` to migrate existing pickled models
+- Prediction code now loads `.json` models with pickle fallback
+- Documentation clarifies recommended Python 3.10, scikit-learn 1.5, and XGBoost 2.x
 
+---
 **Bottom Line**: The revamp is functionally complete with all models trained, thresholds optimized, and API ready. Focus now shifts to deployment and performance validation.
