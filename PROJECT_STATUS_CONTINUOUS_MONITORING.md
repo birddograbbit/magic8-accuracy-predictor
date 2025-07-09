@@ -4,6 +4,8 @@
 
 This document tracks the integration of magic8-accuracy-predictor with DiscordTrading's new continuous monitoring system (Section 12). The continuous monitoring system represents a paradigm shift from schedule-based to real-time adaptive trading.
 
+> **Environment Note**: Recommended environment is **Python 3.10**, **scikit-learn 1.5**, and **XGBoost 2.x**. Models saved in JSON format via `Booster.save_model` remain compatible when upgrading.
+
 ## Current State (As of January 7, 2025)
 
 ### Completed Work
