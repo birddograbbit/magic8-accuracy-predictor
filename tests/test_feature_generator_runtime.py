@@ -108,3 +108,16 @@ def test_price_key_fallback():
     assert len(feats) == expected
     assert f"SPX_close" in names
 
+
+def test_risk_reward_ratio_positive():
+    order = {
+        "strategy": "Butterfly",
+        "premium": 1,
+        "predicted_price": 1,
+        "risk": -10,
+        "reward": 20,
+    }
+    feats, names = asyncio.run(generate(order))
+    idx = names.index("risk_reward_ratio")
+    assert feats[idx] > 0
+

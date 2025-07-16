@@ -36,7 +36,7 @@ from feature_engineering.real_time_features import RealTimeFeatureGenerator
 from models.hierarchical_predictor import HierarchicalPredictor
 from risk_reward_calculator import RiskRewardCalculator
 from cache_manager import CacheManager
-from utils.prediction_logger import PredictionLogger
+from utils.prediction_logger import PredictionLoggingMiddleware
 
 MODEL_PATH = "models/xgboost_phase1_model.pkl"
 FEATURE_INFO_PATH = "data/phase1_processed/feature_info.json"
@@ -93,7 +93,7 @@ feature_gen: RealTimeFeatureGenerator
 manager: DataManager
 cache_manager: CacheManager
 batch_max_size: int = 10
-prediction_logger: PredictionLogger | None = None
+prediction_logger: PredictionLoggingMiddleware | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -122,7 +122,7 @@ async def lifespan(app: FastAPI):
     if monitor_cfg.get("enabled") and monitor_cfg.get("track_predictions") and monitor_cfg.get("save_to_file"):
         log_file = monitor_cfg.get("predictions_file", "logs/predictions.jsonl")
         global prediction_logger
-        prediction_logger = PredictionLogger(log_file)
+        prediction_logger = PredictionLoggingMiddleware(log_file)
 
     # Multi-model configuration
     model_map = cfg.get('models')
@@ -226,7 +226,7 @@ async def calculate_risk_reward(request: TradeInstruction):
     }
 
 
-async def _predict_trade(req: TradeRequest) -> PredictionResponse:
+async def _predict_trade(req: TradeRequest, market_data: Optional[Dict] = None) -> PredictionResponse:
     if model is None and predictor is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
@@ -259,7 +259,7 @@ async def _predict_trade(req: TradeRequest) -> PredictionResponse:
             proba = model.predict_proba(X)[0][1]
         cache_manager.set_prediction(pred_key, proba)
 
-    data = await manager.get_market_data(req.symbol)
+    data = market_data or await manager.get_market_data(req.symbol)
 
     if (req.risk is None or req.reward is None) and req.strikes:
         calc = RiskRewardCalculator()
@@ -292,7 +292,7 @@ async def _predict_trade(req: TradeRequest) -> PredictionResponse:
     )
 
     if prediction_logger:
-        await prediction_logger.log_prediction(order, response, threshold)
+        await prediction_logger.log(order, response, threshold)
 
     return response
 
@@ -304,8 +304,20 @@ async def predict(req: TradeRequest):
 @app.post("/predict/batch", response_model=BatchPredictionResponse)
 async def predict_batch(request: BatchTradeRequest):
     trades = request.requests[:batch_max_size]
-    results = [await _predict_trade(trade) for trade in trades]
+    market_data_map: Dict[str, Dict] = {}
+    if request.share_market_data:
+        unique_symbols = {t.symbol for t in trades}
+        for sym in unique_symbols:
+            market_data_map[sym] = await manager.get_market_data(sym)
+
+    results = []
+    for trade in trades:
+        data = market_data_map.get(trade.symbol) if request.share_market_data else None
+        results.append(await _predict_trade(trade, market_data=data))
     metrics = cache_manager.stats()
+    if prediction_logger:
+        pairs = [(t.model_dump(), r) for t, r in zip(trades, results)]
+        await prediction_logger.log_batch(pairs)
     return BatchPredictionResponse(predictions=results, batch_metrics=metrics)
 
 if __name__ == "__main__":
