@@ -456,7 +456,7 @@ class RealTimeFeatureGenerator:
         risk = order_details.get('risk', 0)
         reward = order_details.get('reward', 0)
         if risk and reward:
-            features['risk_reward_ratio'] = reward / risk
+            features['risk_reward_ratio'] = reward / abs(risk)
         else:
             features['risk_reward_ratio'] = 0
         

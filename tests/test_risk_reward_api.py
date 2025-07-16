@@ -12,6 +12,11 @@ def create_client(monkeypatch):
     project_root = os.path.join(os.path.dirname(__file__), "..")
     sys.path.append(project_root)
     sys.path.append(os.path.join(project_root, "src"))
+    import types
+    base_mod = types.ModuleType('data_providers.standalone_provider')
+    base_mod.StandaloneDataProvider = object
+    sys.modules['data_providers'] = types.ModuleType('data_providers')
+    sys.modules['data_providers.standalone_provider'] = base_mod
     api = importlib.import_module("src.prediction_api_realtime")
 
     class FakeManager:

@@ -230,7 +230,8 @@ curl -X POST http://localhost:8000/predict/batch \
          {"symbol": "SPX", "strategy": "Iron Condor", "premium": 0.65, "predicted_price": 5855},
          {"symbol": "SPY", "strategy": "Butterfly", "premium": 2.48, "predicted_price": 585.5},
          {"symbol": "SPY", "strategy": "Iron Condor", "premium": 0.43, "predicted_price": 585.5}
-       ]
+       ],
+       "share_market_data": true
      }'
 
 # Response includes cache metrics for monitoring performance
